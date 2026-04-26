@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Form
+from starlette.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
@@ -299,7 +300,8 @@ async def measure_body(
 
     try:
         engine = get_measure_engine()
-        result = engine.analyze(image_bgr, height_cm)
+        # rembg(u2net) CPU 추론이 동기 블로킹이므로 스레드풀에서 실행
+        result = await run_in_threadpool(engine.analyze, image_bgr, height_cm)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:

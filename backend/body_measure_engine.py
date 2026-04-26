@@ -8,17 +8,14 @@ import mediapipe as mp
 import numpy as np
 from mediapipe.tasks import python as mp_tasks
 from mediapipe.tasks.python import vision as mp_vision
+from PIL import Image as PILImage
+from rembg import new_session, remove as rembg_remove
 
 _POSE_MODEL_PATH = os.path.join(os.path.dirname(__file__), "pose_landmarker_heavy.task")
 _POSE_MODEL_URL = (
     "https://storage.googleapis.com/mediapipe-models/"
     "pose_landmarker/pose_landmarker_heavy/float16/latest/"
     "pose_landmarker_heavy.task"
-)
-_SEG_MODEL_PATH = os.path.join(os.path.dirname(__file__), "selfie_segmenter.tflite")
-_SEG_MODEL_URL = (
-    "https://storage.googleapis.com/mediapipe-models/"
-    "image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite"
 )
 
 
@@ -35,14 +32,10 @@ class BodyMeasureEngine:
     """
 
     def __init__(self) -> None:
-        for path, url, label in [
-            (_POSE_MODEL_PATH, _POSE_MODEL_URL, "포즈 랜드마커"),
-            (_SEG_MODEL_PATH, _SEG_MODEL_URL, "세그멘테이션"),
-        ]:
-            if not os.path.exists(path):
-                print(f"[BodyMeasureEngine] {label} 모델 다운로드 중...")
-                urllib.request.urlretrieve(url, path)
-                print(f"[BodyMeasureEngine] {label} 다운로드 완료.")
+        if not os.path.exists(_POSE_MODEL_PATH):
+            print("[BodyMeasureEngine] 포즈 랜드마커 모델 다운로드 중...")
+            urllib.request.urlretrieve(_POSE_MODEL_URL, _POSE_MODEL_PATH)
+            print("[BodyMeasureEngine] 포즈 랜드마커 다운로드 완료.")
 
         cpu = mp_tasks.BaseOptions.Delegate.CPU
 
@@ -57,13 +50,10 @@ class BodyMeasureEngine:
             )
         )
 
-        self._segmenter = mp_vision.ImageSegmenter.create_from_options(
-            mp_vision.ImageSegmenterOptions(
-                base_options=mp_tasks.BaseOptions(model_asset_path=_SEG_MODEL_PATH, delegate=cpu),
-                output_confidence_masks=True,
-                output_category_mask=False,
-            )
-        )
+        # rembg: u2net_human_seg 모델 (첫 실행 시 자동 다운로드 ~170MB)
+        print("[BodyMeasureEngine] rembg 세그멘테이션 세션 초기화 중...")
+        self._rembg_session = new_session("u2net_human_seg")
+        print("[BodyMeasureEngine] rembg 초기화 완료.")
 
     # =========================================================
     # 공개 메서드
@@ -83,17 +73,27 @@ class BodyMeasureEngine:
         if not pose_result.pose_landmarks:
             raise ValueError("사람의 포즈를 감지하지 못했습니다.")
 
-        seg_result = self._segmenter.segment(mp_image)
-        if not seg_result.confidence_masks:
-            raise ValueError("세그멘테이션 마스크를 생성하지 못했습니다.")
-
         landmarks = self._landmarks_to_dicts(pose_result.pose_landmarks[0], w, h)
         pose_valid, warnings = self._validate_pose(landmarks, w, h)
 
-        # confidence_masks[-1] = person confidence (VEC32F1, float32, M1 안전)
-        # np.squeeze: Tasks API가 (H,W,1)을 반환하는 경우 대비
-        seg_float = np.squeeze(seg_result.confidence_masks[-1].numpy_view().copy())
-        raw_mask = (seg_float > 0.5).astype(np.uint8) * 255
+        # rembg: u2net 내부 처리 해상도는 320×320 고정이므로
+        # 입력을 max 600px로 다운스케일 후 알파를 원본 크기로 복원 → 속도 개선
+        _REMBG_MAX = 600
+        scale = min(1.0, _REMBG_MAX / max(h, w))
+        rw, rh = int(w * scale), int(h * scale)
+        pil_input = PILImage.fromarray(image_rgb).resize((rw, rh), PILImage.LANCZOS)
+
+        rembg_rgba = rembg_remove(pil_input, session=self._rembg_session, only_mask=False)
+        alpha_small = np.array(rembg_rgba)[:, :, 3].astype(np.float32)
+
+        # 원본 크기로 복원 (스케일 == 1이면 복원 생략)
+        if scale < 1.0:
+            alpha_arr = cv2.resize(alpha_small, (w, h), interpolation=cv2.INTER_LINEAR)
+        else:
+            alpha_arr = alpha_small
+
+        seg_float = alpha_arr / 255.0
+        raw_mask  = (alpha_arr > 128).astype(np.uint8) * 255
         mask = self._build_binary_mask(raw_mask, w)
 
         # ── 스케일 계산 (HTML: topHeadY ~ heelYpx) ──
@@ -225,7 +225,7 @@ class BodyMeasureEngine:
 
         debug_image = self._draw_debug(image_bgr, landmarks, top_y, bottom_y,
                                        armpits, crotch, measurements)
-        person_extracted, gray_mask = self._build_visual_images(image_bgr, raw_mask, mask)
+        person_extracted, gray_mask = self._build_visual_images(image_bgr, seg_float, raw_mask)
 
         return {
             "pose_valid":  pose_valid,
@@ -294,32 +294,35 @@ class BodyMeasureEngine:
 
     def _build_visual_images(
         self, image_bgr: np.ndarray,
+        seg_float: np.ndarray,
         raw_mask: np.ndarray,
-        tight_mask: np.ndarray,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
-        app.py 동일 시각화 두 장 생성.
-        - person_extracted : 원본 사진 + 회색 배경 (raw_mask, 자연스러운 엣지)
-        - gray_mask        : 어두운 실루엣 + 밝은 배경 (tight_mask에 블러 추가)
-
-        gray_mask는 시각적 출력이므로 Gaussian blur로 엣지를 스무싱.
-        계산에는 tight_mask를 사용해 갭 감지 정확도를 유지.
+        - person_extracted: float confidence로 소프트 알파 블렌딩 → 자연스러운 경계
+        - gray_mask: contour fill 없이 raw_mask + 가벼운 morph → 팔/다리 갭 보존
         """
-        _BG, _FG = 245, 60
-        w = image_bgr.shape[1]
+        _BG = np.array([245, 245, 245], dtype=np.float32)  # 밝은 회색 배경
+        _FG = 60                                            # 어두운 회색 인물
 
-        # 시각용 스무스 마스크 (tight → blur → 재이진화)
-        k_blur = max(5, int(w * 0.025)) | 1
-        blurred = cv2.GaussianBlur(tight_mask, (k_blur, k_blur), 0)
-        _, smooth = cv2.threshold(blurred, 127, 255, cv2.THRESH_BINARY)
+        # ── 누끼: float confidence를 알파로 직접 사용 ──
+        alpha = np.clip(seg_float, 0.0, 1.0)[:, :, np.newaxis]
+        extracted = (image_bgr.astype(np.float32) * alpha
+                     + _BG * (1.0 - alpha)).astype(np.uint8)
 
-        # 그레이 마스크: 스무스 실루엣
-        gray = np.full_like(image_bgr, _BG)
-        gray[smooth > 128] = _FG
-
-        # 누끼: 원본 사진, raw_mask 기준 경계
-        alpha3 = np.stack([raw_mask > 128] * 3, axis=-1)
-        extracted = np.where(alpha3, image_bgr, np.full_like(image_bgr, _BG))
+        # ── 실루엣: raw_mask 기반, contour fill 생략 → 팔-몸통 갭 보존 ──
+        # open(3px): 외부 작은 노이즈 제거
+        # close(7px): 내부 작은 구멍 메우기 (팔-몸통 사이 갭은 훨씬 커서 유지)
+        # 소프트 blur(w*0.008): 경계 계단 현상 제거
+        w_sil = image_bgr.shape[1]
+        k_open  = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        k_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+        sil = cv2.morphologyEx(raw_mask, cv2.MORPH_OPEN,  k_open)
+        sil = cv2.morphologyEx(sil,      cv2.MORPH_CLOSE, k_close)
+        k_blur = max(5, int(w_sil * 0.008)) | 1
+        sil = cv2.GaussianBlur(sil, (k_blur, k_blur), 0)
+        _, sil = cv2.threshold(sil, 127, 255, cv2.THRESH_BINARY)
+        gray = np.full_like(image_bgr, 245)
+        gray[sil > 128] = _FG
 
         return extracted, gray
 
