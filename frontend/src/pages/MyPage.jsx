@@ -17,7 +17,7 @@ function MyPage() {
 
   const menuItems = [
     { title: '내 상품 관리', icon: <Package size={20} />, path: '/mypage/products', description: '등록한 상품을 확인합니다.' },
-    { title: '아바타 관리', icon: <User size={20} />, path: '#', description: '나의 아바타 정보를 확인합니다.' },
+    { title: '신체 측정', icon: <User size={20} />, path: '/mypage/measure', description: '전신 사진으로 신체 치수를 측정합니다.' },
     { title: '리뷰 관리', icon: <MessageSquareMore size={20} />, path: '#', description: '작성한 리뷰 목록을 확인합니다.' },
     { title: '설정', icon: <Settings size={20} />, path: '#', description: '앱 설정을 확인합니다.' },
   ];

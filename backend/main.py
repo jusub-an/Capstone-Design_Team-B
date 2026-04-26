@@ -9,6 +9,18 @@ from database import engine, get_db
 import os
 import shutil
 import uuid
+import base64
+import numpy as np
+import cv2
+from body_measure_engine import BodyMeasureEngine
+
+_measure_engine: BodyMeasureEngine = None
+
+def get_measure_engine() -> BodyMeasureEngine:
+    global _measure_engine
+    if _measure_engine is None:
+        _measure_engine = BodyMeasureEngine()
+    return _measure_engine
 
 # 테이블 생성
 try:
@@ -21,6 +33,10 @@ app = FastAPI(title="Capstone Design FastAPI", description="Backend APIs for Cap
 
 # --- 초기 데이터 시딩 (카테고리) ---
 @app.on_event("startup")
+def startup():
+    get_measure_engine()
+    seed_data()
+
 def seed_data():
     from database import SessionLocal
     db = SessionLocal()
@@ -267,3 +283,38 @@ def update_product(
     db.commit()
     db.refresh(db_product)
     return db_product
+
+# --- 신체 측정 엔드포인트 ---
+@app.post("/api/measure")
+async def measure_body(
+    image: UploadFile = File(...),
+    height_cm: float = Form(...),
+):
+    contents = await image.read()
+    nparr = np.frombuffer(contents, np.uint8)
+    image_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+    if image_bgr is None:
+        raise HTTPException(status_code=400, detail="이미지를 읽을 수 없습니다.")
+
+    try:
+        engine = get_measure_engine()
+        result = engine.analyze(image_bgr, height_cm)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"분석 중 오류 발생: {str(e)}")
+
+    def _encode(img):
+        _, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        return base64.b64encode(buf).decode("utf-8")
+
+    return {
+        "pose_valid":              result["pose_valid"],
+        "warnings":                result["warnings"],
+        "measurements":            result["measurements"],
+        "cm_per_pixel":            result["cm_per_pixel"],
+        "debug_image_base64":      _encode(result["debug_image"]),
+        "person_extracted_base64": _encode(result["person_extracted"]),
+        "gray_mask_base64":        _encode(result["gray_mask"]),
+    }

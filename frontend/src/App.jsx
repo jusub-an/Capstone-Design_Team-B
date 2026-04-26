@@ -6,6 +6,7 @@ import ProductRegister from './pages/ProductRegister';
 import ProductDetail from './pages/ProductDetail';
 import MyPage from './pages/MyPage';
 import MyProducts from './pages/MyProducts';
+import BodyMeasure from './pages/BodyMeasure';
 
 function App() {
   return (
@@ -25,6 +26,7 @@ function App() {
           <Route path="/products/edit/:id" element={<ProductRegister />} />
           <Route path="/mypage" element={<MyPage />} />
           <Route path="/mypage/products" element={<MyProducts />} />
+          <Route path="/mypage/measure" element={<BodyMeasure />} />
         </Routes>
       </div>
     </Router>
