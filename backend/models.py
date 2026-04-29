@@ -3,6 +3,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
 
+
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, Identity(start=1), primary_key=True)
@@ -17,6 +18,7 @@ class Category(Base):
     id = Column(Integer, Identity(start=1), primary_key=True)
     name = Column(String(100), unique=True, index=True, nullable=False)
     products = relationship("Product", back_populates="category")
+
 
 class Product(Base):
     __tablename__ = "products"

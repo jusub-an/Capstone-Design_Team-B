@@ -53,8 +53,9 @@ function BodyMeasure() {
     formData.append('height_cm', parseFloat(heightCm));
 
     try {
-      const res = await axios.post('http://localhost:8000/api/body-measure', formData, {
+      const res = await axios.post('http://localhost:8000/api/measure', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 120000,  // rembg AI 추론 최대 2분 대기
       });
       setResult(res.data);
     } catch (err) {
@@ -183,7 +184,7 @@ function BodyMeasure() {
               transition: 'opacity 0.2s',
             }}
           >
-            {loading ? '분석 중...' : '측정 시작'}
+            {loading ? 'AI 분석 중... (10~30초 소요)' : '측정 시작'}
           </button>
         </div>
 

@@ -1,5 +1,6 @@
 from typing import List, Optional
 from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Form
+from starlette.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session, joinedload
@@ -15,6 +16,14 @@ import numpy as np
 import cv2
 from body_measure_engine import BodyMeasureEngine
 
+_measure_engine: BodyMeasureEngine = None
+
+def get_measure_engine() -> BodyMeasureEngine:
+    global _measure_engine
+    if _measure_engine is None:
+        _measure_engine = BodyMeasureEngine()
+    return _measure_engine
+
 # DB 테이블 자동 생성
 try:
     if engine:
@@ -26,6 +35,10 @@ app = FastAPI(title="Capstone Design FastAPI", version="1.0.0")
 
 # 서버 시작 시 초기 카테고리(상의, 바지) 생성
 @app.on_event("startup")
+def startup():
+    get_measure_engine()
+    seed_data()
+
 def seed_data():
     from database import SessionLocal
     db = SessionLocal()
