@@ -14,11 +14,11 @@ DB_SERVICE_NAME = "XE" # 혹은 orel 등의 SID 나 서비스 이름
 # 비밀번호에 특수문자가 있을 수 있으므로 quote_plus 사용권장
 encoded_password = quote_plus(DB_PASSWORD)
 
-# DSN(Data Source Name) 방식 등 여러 방식이 있지만, 간단한 URI 방식 사용
+# URI 방식 사용
 SQLALCHEMY_DATABASE_URL = f"oracle+oracledb://{DB_USER}:{encoded_password}@{DB_HOST}:{DB_PORT}/?service_name={DB_SERVICE_NAME}"
 
 # SQLAlchemy 엔진 생성
-# echo=True는 쿼리 로그를 보여줍니다. 배포 시에는 False로 변경하세요.
+
 try:
     engine = create_engine(SQLALCHEMY_DATABASE_URL, echo=True)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

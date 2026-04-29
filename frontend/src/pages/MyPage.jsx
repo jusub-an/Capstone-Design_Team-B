@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronRight, Package, User, MessageSquareMore, Settings, LogOut } from 'lucide-react';
+import { ChevronRight, Package, User, MessageSquareMore, Settings, LogOut, Heart } from 'lucide-react';
 import './ProductList.css'; // Reusing some header styles
 
 function MyPage() {
@@ -17,9 +17,9 @@ function MyPage() {
 
   const menuItems = [
     { title: '내 상품 관리', icon: <Package size={20} />, path: '/mypage/products', description: '등록한 상품을 확인합니다.' },
-    { title: '아바타 관리', icon: <User size={20} />, path: '#', description: '나의 아바타 정보를 확인합니다.' },
-    { title: '리뷰 관리', icon: <MessageSquareMore size={20} />, path: '#', description: '작성한 리뷰 목록을 확인합니다.' },
-    { title: '설정', icon: <Settings size={20} />, path: '#', description: '앱 설정을 확인합니다.' },
+    { title: '찜한 상품 목록', icon: <Heart size={20} />, path: '/mypage/wishes', description: '찜한 상품들을 확인합니다.' },
+    { title: '아바타 관리', icon: <User size={20} />, path: '/mypage/body-measure', description: '나의 아바타 정보를 확인합니다.' },
+    { title: '리뷰 관리', icon: <MessageSquareMore size={20} />, path: '/mypage/reviews', description: '작성한 리뷰 목록을 확인합니다.' }
   ];
 
   return (

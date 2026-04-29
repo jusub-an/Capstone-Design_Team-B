@@ -35,8 +35,8 @@ export default function Login() {
   return (
     <div className="auth-card">
       <div className="auth-header">
-        <h1 className="auth-title">Welcome Back</h1>
-        <p className="auth-subtitle">계속하시려면 로그인해주세요.</p>
+        <h1 className="auth-title">Virtual Fitting</h1>
+        <p className="auth-subtitle">서비스 이용을 위해 로그인해주세요.</p>
       </div>
 
       {error && <div className="error-message">{error}</div>}
@@ -46,9 +46,9 @@ export default function Login() {
           <label className="input-label">이메일 주소</label>
           <div className="input-wrapper">
             <Mail className="input-icon" size={20} />
-            <input 
-              type="email" 
-              className="auth-input" 
+            <input
+              type="email"
+              className="auth-input"
               placeholder="user@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -61,9 +61,9 @@ export default function Login() {
           <label className="input-label">비밀번호</label>
           <div className="input-wrapper">
             <Lock className="input-icon" size={20} />
-            <input 
-              type="password" 
-              className="auth-input" 
+            <input
+              type="password"
+              className="auth-input"
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -79,7 +79,7 @@ export default function Login() {
       </form>
 
       <div className="auth-footer">
-        계정이 없으신가요? 
+        계정이 없으신가요?
         <Link to="/register" className="auth-link">회원가입</Link>
       </div>
     </div>

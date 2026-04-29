@@ -50,6 +50,25 @@
   background-color: #4f46e5;
 }
 
+.login-header-button {
+  padding: 10px 24px;
+  background-color: transparent;
+  color: #6366f1;
+  border: 2px solid #6366f1;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.login-header-button:hover {
+  background-color: #6366f1;
+  color: #fff;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2);
+}
+
 /* User Profile & Dropdown */
 .user-profile-wrapper {
   position: relative;
@@ -198,14 +217,28 @@
   padding: 20px;
 }
 
+.category-brand-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
 .product-category {
-  display: inline-block;
   font-size: 0.75rem;
   font-weight: 600;
   color: #718096;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  margin-bottom: 8px;
+}
+
+.product-brand {
+  font-size: 0.7rem;
+  color: #6366f1;
+  font-weight: 700;
+  background: #eef2ff;
+  padding: 2px 8px;
+  border-radius: 4px;
 }
 
 .product-name {
@@ -220,9 +253,84 @@
 
 .product-price {
   margin: 0;
-  font-size: 1.25rem;
+  font-size: 1.15rem;
   font-weight: 700;
-  color: #e53e3e;
+  color: #1a1a1a;
+}
+
+.product-stats {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.stat-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.stat-item.rating {
+  color: #ffc107;
+}
+
+.stat-item.wish {
+  color: #ff4d4f;
+}
+
+.stat-count {
+  color: #94a3b8;
+  margin-left: 2px;
+}
+
+/* Wish Button on Image */
+.product-image-container {
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px 12px 0 0;
+}
+
+.wish-button {
+  position: absolute;
+  top: 15px;
+  right: 15px;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(4px);
+  border: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #94a3b8;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+  z-index: 20; /* Higher than card */
+}
+
+.wish-button:hover {
+  transform: scale(1.1);
+  background: #fff;
+  box-shadow: 0 6px 15px rgba(0, 0, 0, 0.15);
+}
+
+.wish-button.wished {
+  color: #ff4d4f;
+}
+
+.product-card {
+  position: relative;
+  background-color: #fff;
+  border-radius: 12px;
+  overflow: hidden;
+  transition: all 0.3s ease;
+  cursor: pointer;
+  border: 1px solid #eee;
 }
 
 /* Responsive Styles */

@@ -38,21 +38,21 @@ export default function Register() {
   return (
     <div className="auth-card">
       <div className="auth-header">
-        <h1 className="auth-title">Create Account</h1>
-        <p className="auth-subtitle">무료로 회원가입하고 시작하세요!</p>
+        <h1 className="auth-title">회원가입</h1>
+        <p className="auth-subtitle">새로운 패션 경험을 시작해보세요!</p>
       </div>
 
       {error && <div className="error-message">{error}</div>}
-      {success && <div className="error-message" style={{background: 'rgba(52, 211, 153, 0.1)', color: '#34d399', borderColor: 'rgba(52, 211, 153, 0.2)'}}>{success}</div>}
+      {success && <div className="error-message" style={{ background: 'rgba(52, 211, 153, 0.1)', color: '#34d399', borderColor: 'rgba(52, 211, 153, 0.2)' }}>{success}</div>}
 
       <form className="auth-form" onSubmit={handleRegister}>
         <div className="input-group">
           <label className="input-label">사용자 이름</label>
           <div className="input-wrapper">
             <User className="input-icon" size={20} />
-            <input 
-              type="text" 
-              className="auth-input" 
+            <input
+              type="text"
+              className="auth-input"
               placeholder="홍길동"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
@@ -65,9 +65,9 @@ export default function Register() {
           <label className="input-label">이메일 주소</label>
           <div className="input-wrapper">
             <Mail className="input-icon" size={20} />
-            <input 
-              type="email" 
-              className="auth-input" 
+            <input
+              type="email"
+              className="auth-input"
               placeholder="user@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -80,9 +80,9 @@ export default function Register() {
           <label className="input-label">비밀번호</label>
           <div className="input-wrapper">
             <Lock className="input-icon" size={20} />
-            <input 
-              type="password" 
-              className="auth-input" 
+            <input
+              type="password"
+              className="auth-input"
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -98,7 +98,7 @@ export default function Register() {
       </form>
 
       <div className="auth-footer">
-        이미 계정이 있으신가요? 
+        이미 계정이 있으신가요?
         <Link to="/login" className="auth-link">로그인</Link>
       </div>
     </div>
