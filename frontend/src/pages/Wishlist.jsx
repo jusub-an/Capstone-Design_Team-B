@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Star, Heart, ChevronLeft } from 'lucide-react';
 import axios from 'axios';
+import './MyReviews.css'; // Reusing styles
 import './ProductList.css'; // Reusing styles
 
 function Wishlist() {
@@ -50,39 +51,16 @@ function Wishlist() {
   };
 
   return (
-    <div className="product-list-container">
-      <header className="product-header">
-        <div className="logo-section" onClick={() => navigate('/products')} style={{ cursor: 'pointer' }}>
-          <h2>Virtual Fitting</h2>
-        </div>
-        <div className="header-actions">
-          {isLoggedIn ? (
-            <div className="user-profile-wrapper">
-              <div className="user-avatar" title="사용자 프로필">
-                {username.charAt(0).toUpperCase()}
-              </div>
-              <div className="dropdown-menu">
-                <ul>
-                  <li onClick={() => navigate('/mypage')}>마이페이지</li>
-                  <li onClick={() => alert('내 아바타 구현 예정')}>내 아바타</li>
-                  <li onClick={handleLogout} className="logout-action">로그아웃</li>
-                </ul>
-              </div>
-            </div>
-          ) : (
-            <button className="login-header-button" onClick={() => navigate('/login')}>로그인</button>
-          )}
-        </div>
-      </header>
-
-      <main className="product-main">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '30px' }}>
-          <button onClick={() => navigate('/mypage')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-            <ChevronLeft size={24} />
-          </button>
-          <h3 className="section-title" style={{ marginBottom: 0 }}>찜한 상품 목록</h3>
-        </div>
-        
+    <div className="wishlist-container">
+          <div className="wishlist-header">
+            <button onClick={() => navigate('/mypage')} className="back-btn">
+              <ChevronLeft size={20} />
+              <span>마이페이지</span>
+            </button>
+            <h1>찜한 상품</h1>
+            <p>찜한 {wishes.length}개의 상품이 있습니다.</p>
+          </div>
+        <main className="product-main">
         {wishes.length === 0 ? (
           <div className="empty-state">
             <Heart size={48} color="#e2e8f0" style={{ marginBottom: '15px' }} />

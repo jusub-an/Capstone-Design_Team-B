@@ -66,31 +66,15 @@ function BodyMeasure() {
   };
 
   return (
-    <div className="product-list-container">
-      <header className="product-header">
-        <div className="logo-section" onClick={() => navigate('/products')} style={{ cursor: 'pointer' }}>
-          <h2>Virtual Fitting</h2>
-        </div>
-        <div className="header-actions">
-          <div className="user-profile-wrapper">
-            <div className="user-avatar">{username.charAt(0).toUpperCase()}</div>
+    <div className="wishlist-container">
+        <div className="wishlist-header">
+            <button onClick={() => navigate('/mypage')} className="back-btn">
+              <ChevronLeft size={20} />
+              <span>마이페이지</span>
+            </button>
+            <h1>신체 측정</h1>
           </div>
-        </div>
-      </header>
-
-      <main className="product-main" style={{ maxWidth: '760px', margin: '0 auto', padding: '30px 20px' }}>
-        <button
-          onClick={() => navigate('/mypage')}
-          style={{
-            display: 'flex', alignItems: 'center', gap: '6px',
-            background: 'none', border: 'none', cursor: 'pointer',
-            color: '#555', fontSize: '0.9rem', marginBottom: '20px', padding: 0,
-          }}
-        >
-          <ChevronLeft size={16} /> 마이페이지로
-        </button>
-
-        <h2 style={{ margin: '0 0 24px', fontSize: '1.6rem', fontWeight: 700 }}>신체 측정</h2>
+    <main className="product-main" style={{ maxWidth: '760px', margin: '0 auto', padding: '30px 20px' }}>
 
         <div style={{ ...cardStyle, marginBottom: '24px' }}>
           <div style={{ marginBottom: '20px' }}>

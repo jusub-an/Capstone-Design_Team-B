@@ -58,18 +58,15 @@ function MyProducts() {
   };
 
   return (
-    <div className="my-products-container">
-      <header className="my-products-header">
-        <button className="back-btn" onClick={() => navigate('/mypage')}>
+      <div className="my-products-container">
+      <div className="my-products-header">
+        <button onClick={() => navigate('/mypage')} className="back-btn">
           <ChevronLeft size={20} />
           <span>마이페이지</span>
         </button>
-        <h2>내 상품 관리</h2>
-        <button className="add-product-btn" onClick={() => navigate('/products/new')}>
-          <Plus size={20} />
-          <span>새 상품 등록</span>
-        </button>
-      </header>
+        <h1>상품 관리</h1>
+        <p>{products.length}개의 상품이 등록되어 있습니다.</p>
+      </div>
 
       <main className="my-products-content">
         {loading ? (
