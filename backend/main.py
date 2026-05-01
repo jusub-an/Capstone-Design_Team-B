@@ -227,10 +227,12 @@ def get_product_detail(product_id: int, user_email: str = None, db: Session = De
         item.is_wished = db.query(models.Wish).filter(models.Wish.product_id == product.id, models.Wish.user_email == user_email).first() is not None
     return item
 
+import json
+
 @app.post("/api/products", response_model=schemas.ProductResponse)
 def create_product(
     category_id: int = Form(...), name: str = Form(...), brand: str = Form(...), price: int = Form(...),
-    description: Optional[str] = Form(None), image: UploadFile = File(...), desc_images: List[UploadFile] = File([]),
+    description: Optional[str] = Form(None), sizes: Optional[str] = Form(None), image: UploadFile = File(...), desc_images: List[UploadFile] = File([]),
     owner_email: str = Form(...), db: Session = Depends(get_db)
 ):
     try:
@@ -249,6 +251,20 @@ def create_product(
         db.add(new_product)
         # Flush to get ID without committing yet
         db.flush()
+
+        # 사이즈 다중 저장
+        if sizes:
+            sizes_data = json.loads(sizes)
+            for s in sizes_data:
+                new_size = models.ProductSize(
+                    product_id=new_product.id,
+                    size_name=s.get("size_name"),
+                    length=s.get("length"),
+                    chest=s.get("chest"),
+                    sleeve=s.get("sleeve"),
+                    neck=s.get("neck")
+                )
+                db.add(new_size)
 
         # 상세 이미지 다중 저장
         if desc_images:
@@ -274,7 +290,7 @@ def create_product(
 @app.put("/api/products/{product_id}", response_model=schemas.ProductResponse)
 def update_product(
     product_id: int, category_id: int = Form(...), name: str = Form(...), brand: str = Form(...), price: int = Form(...),
-    description: Optional[str] = Form(None), image: UploadFile = File(None), desc_images: List[UploadFile] = File([]),
+    description: Optional[str] = Form(None), sizes: Optional[str] = Form(None), image: UploadFile = File(None), desc_images: List[UploadFile] = File([]),
     owner_email: str = Form(...), db: Session = Depends(get_db)
 ):
     db_product = db.query(models.Product).filter(models.Product.id == product_id).first()
@@ -286,6 +302,20 @@ def update_product(
     db_product.brand = brand
     db_product.price = price
     db_product.description = description
+    
+    if sizes:
+        db.query(models.ProductSize).filter(models.ProductSize.product_id == product_id).delete()
+        sizes_data = json.loads(sizes)
+        for s in sizes_data:
+            new_size = models.ProductSize(
+                product_id=db_product.id,
+                size_name=s.get("size_name"),
+                length=s.get("length"),
+                chest=s.get("chest"),
+                sleeve=s.get("sleeve"),
+                neck=s.get("neck")
+            )
+            db.add(new_size)
     
     if image and image.filename:
         file_ext = image.filename.split(".")[-1]

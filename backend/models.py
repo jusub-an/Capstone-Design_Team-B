@@ -39,6 +39,19 @@ class Product(Base):
     reviews = relationship("Review", back_populates="product", cascade="all, delete-orphan")
     wishes = relationship("Wish", back_populates="product", cascade="all, delete-orphan")
     desc_images = relationship("ProductImage", back_populates="product", cascade="all, delete-orphan")
+    sizes = relationship("ProductSize", back_populates="product", cascade="all, delete-orphan")
+
+class ProductSize(Base):
+    __tablename__ = "product_sizes"
+    id = Column(Integer, Identity(start=1), primary_key=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    size_name = Column(String(50), nullable=False)
+    length = Column(Float, nullable=True)
+    chest = Column(Float, nullable=True)
+    sleeve = Column(Float, nullable=True)
+    neck = Column(Float, nullable=True)
+
+    product = relationship("Product", back_populates="sizes")
 
 class ProductImage(Base):
     __tablename__ = "product_images"

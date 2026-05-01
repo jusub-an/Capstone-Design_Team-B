@@ -13,12 +13,13 @@ function ProductRegister() {
     name: '',
     brand: '',
     price: '',
-    category_type: '', // To determine Top/Bottom
-    length: '',
-    chest: '',
-    sleeve: '',
-    neck: ''
+    category_type: '' // To determine Top/Bottom
   });
+
+  const [sizes, setSizes] = useState([
+    { id: Date.now(), size_name: 'Free', length: '', chest: '', sleeve: '', neck: '' }
+  ]);
+  const [activeSizeId, setActiveSizeId] = useState(null);
 
   const [mainImage, setMainImage] = useState(null);
   const [descImages, setDescImages] = useState([]);
@@ -76,12 +77,13 @@ function ProductRegister() {
           category_type: data.category.name.includes('상의') ? 'Top' : 'Bottom',
           name: data.name,
           brand: data.brand || '',
-          price: data.price,
-          length: '', // You would ideally load these from DB if supported
-          chest: '',
-          sleeve: '',
-          neck: ''
+          price: data.price
         });
+        if (data.sizes && data.sizes.length > 0) {
+          setSizes(data.sizes.map(s => ({ ...s, id: Math.random() })));
+        } else {
+          setSizes([{ id: Date.now(), size_name: 'Free', length: '', chest: '', sleeve: '', neck: '' }]);
+        }
       }
     } catch (error) {
       console.error('Error fetching product data:', error);
@@ -141,9 +143,7 @@ function ProductRegister() {
       submitData.append('price', formData.price);
       submitData.append('owner_email', currentEmail);
       
-      // We append measurements to description for now since backend models might not support them natively yet
-      const desc = `총장: ${formData.length}cm, 가슴단면: ${formData.chest}cm, 소매끝단면: ${formData.sleeve}cm, 넥라인: ${formData.neck}cm`;
-      submitData.append('description', desc);
+      submitData.append('sizes', JSON.stringify(sizes));
 
       if (mainImage) submitData.append('image', mainImage);
       if (descImages.length > 0) {
@@ -184,12 +184,16 @@ function ProductRegister() {
         img.onload = () => {
           imgRef.current = img;
           const MAX_WIDTH = 800;
+          const MAX_HEIGHT = Math.max(window.innerHeight * 0.55, 300); // Prevent overflow on various screens
           let w = img.width, h = img.height;
           let scale = 1;
-          if (w > MAX_WIDTH) {
-            scale = MAX_WIDTH / w;
+          
+          if (w > MAX_WIDTH || h > MAX_HEIGHT) {
+            const scaleW = MAX_WIDTH / w;
+            const scaleH = MAX_HEIGHT / h;
+            scale = Math.min(scaleW, scaleH);
+            w = Math.round(w * scale);
             h = Math.round(h * scale);
-            w = MAX_WIDTH;
           }
           setScaleFactor(scale);
           
@@ -353,16 +357,35 @@ function ProductRegister() {
   };
 
   const handleApplyMeasurements = () => {
-    if (!cvResultData) return;
-    setFormData(prev => ({
-      ...prev,
-      length: cvResultData.length_cm,
-      chest: cvResultData.chest_cm,
-      sleeve: cvResultData.sleeve_width_cm,
-      neck: cvResultData.neck_width_cm
+    if (!cvResultData || !activeSizeId) return;
+    setSizes(prev => prev.map(s => {
+      if (s.id === activeSizeId) {
+        return {
+          ...s,
+          length: cvResultData.length_cm,
+          chest: cvResultData.chest_cm,
+          sleeve: cvResultData.sleeve_width_cm,
+          neck: cvResultData.neck_width_cm
+        };
+      }
+      return s;
     }));
     setShowCvModal(false);
     alert('치수가 적용되었습니다.');
+  };
+
+  const handleCloseCvModal = () => {
+    setShowCvModal(false);
+    setCvStep(0);
+    setCvImage(null);
+    setRectShirt(null);
+    setRectA4(null);
+    setCurrentRect(null);
+    setCvResultData(null);
+    if (canvasRef.current) {
+      const ctx = canvasRef.current.getContext('2d');
+      ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+    }
   };
 
   return (
@@ -371,7 +394,7 @@ function ProductRegister() {
       {showCvModal && (
         <div className="cv-modal-overlay">
           <div className="cv-modal">
-            <button className="close-btn" onClick={() => setShowCvModal(false)}>✕</button>
+            <button className="close-btn" onClick={handleCloseCvModal}>✕</button>
             <h3>👕 AI 자동 치수 추출</h3>
             <div className="cv-instructions">
               {cvStep === 0 && "1️⃣ 사진을 업로드 해주세요."}
@@ -388,7 +411,7 @@ function ProductRegister() {
               </div>
             )}
 
-            <div className="cv-canvas-container" style={{ display: (cvStep > 0 && cvStep < 4) ? 'block' : 'none' }}>
+            <div className="cv-canvas-container" style={{ display: (cvStep > 0 && cvStep < 4) ? 'flex' : 'none' }}>
               <canvas
                 ref={canvasRef}
                 className="cv-canvas"
@@ -470,41 +493,79 @@ function ProductRegister() {
             </select>
           </div>
 
-          {/* Measurements Section */}
+          {/* Dynamic Measurements Section */}
           <div className="measurements-section">
             <div className="measurements-header">
-              <label>상품 치수 (cm)</label>
-              <div className="ai-btn-wrapper">
-                <button 
-                  type="button" 
-                  className={`ai-extract-btn ${formData.category_type === 'Top' ? 'active' : 'disabled'}`}
-                  onClick={() => formData.category_type === 'Top' && setShowCvModal(true)}
-                  disabled={formData.category_type !== 'Top'}
-                >
-                  ✨ AI 자동 치수 추출
-                </button>
-                {formData.category_type !== 'Top' && (
-                  <span className="tooltip">상의 카테고리만 지원합니다. (하의 추후 예정)</span>
-                )}
-              </div>
+              <label>사이즈별 치수 (cm)</label>
+              <button 
+                type="button" 
+                className="add-size-btn"
+                onClick={() => setSizes(prev => [...prev, { id: Date.now(), size_name: '', length: '', chest: '', sleeve: '', neck: '' }])}
+              >
+                + 사이즈 추가
+              </button>
             </div>
-            <div className="measurements-grid">
-              <div className="m-input">
-                <span>총장</span>
-                <input type="number" step="0.1" name="length" value={formData.length} onChange={handleInputChange} placeholder="0.0" />
-              </div>
-              <div className="m-input">
-                <span>가슴단면</span>
-                <input type="number" step="0.1" name="chest" value={formData.chest} onChange={handleInputChange} placeholder="0.0" />
-              </div>
-              <div className="m-input">
-                <span>소매끝단면</span>
-                <input type="number" step="0.1" name="sleeve" value={formData.sleeve} onChange={handleInputChange} placeholder="0.0" />
-              </div>
-              <div className="m-input">
-                <span>넥라인</span>
-                <input type="number" step="0.1" name="neck" value={formData.neck} onChange={handleInputChange} placeholder="0.0" />
-              </div>
+            
+            <div className="sizes-container">
+              {sizes.map((size, index) => (
+                <div key={size.id} className="size-row-card">
+                  <div className="size-row-header">
+                    <input 
+                      type="text" 
+                      placeholder="사이즈명 (예: S, M, Free)" 
+                      value={size.size_name}
+                      onChange={(e) => setSizes(prev => prev.map(s => s.id === size.id ? {...s, size_name: e.target.value} : s))}
+                      required
+                      className="size-name-input"
+                    />
+                    <div className="size-actions">
+                      <div className="ai-btn-wrapper">
+                        <button 
+                          type="button" 
+                          className={`ai-extract-btn ${formData.category_type === 'Top' ? 'active' : 'disabled'}`}
+                          onClick={() => {
+                            if (formData.category_type === 'Top') {
+                              setActiveSizeId(size.id);
+                              setShowCvModal(true);
+                            }
+                          }}
+                          disabled={formData.category_type !== 'Top'}
+                        >
+                          ✨ AI 측정
+                        </button>
+                      </div>
+                      {sizes.length > 1 && (
+                        <button 
+                          type="button" 
+                          className="remove-size-btn"
+                          onClick={() => setSizes(prev => prev.filter(s => s.id !== size.id))}
+                        >
+                          삭제
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div className="measurements-grid">
+                    <div className="m-input">
+                      <span>총장</span>
+                      <input type="number" step="0.1" value={size.length} onChange={(e) => setSizes(prev => prev.map(s => s.id === size.id ? {...s, length: e.target.value} : s))} placeholder="0.0" />
+                    </div>
+                    <div className="m-input">
+                      <span>가슴단면</span>
+                      <input type="number" step="0.1" value={size.chest} onChange={(e) => setSizes(prev => prev.map(s => s.id === size.id ? {...s, chest: e.target.value} : s))} placeholder="0.0" />
+                    </div>
+                    <div className="m-input">
+                      <span>소매끝단면</span>
+                      <input type="number" step="0.1" value={size.sleeve} onChange={(e) => setSizes(prev => prev.map(s => s.id === size.id ? {...s, sleeve: e.target.value} : s))} placeholder="0.0" />
+                    </div>
+                    <div className="m-input">
+                      <span>넥라인</span>
+                      <input type="number" step="0.1" value={size.neck} onChange={(e) => setSizes(prev => prev.map(s => s.id === size.id ? {...s, neck: e.target.value} : s))} placeholder="0.0" />
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 

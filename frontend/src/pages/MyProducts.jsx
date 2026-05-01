@@ -64,7 +64,12 @@ function MyProducts() {
           <ChevronLeft size={20} />
           <span>마이페이지</span>
         </button>
-        <h1>상품 관리</h1>
+        <div className="header-title-row">
+          <h1>상품 관리</h1>
+          <button className="add-product-btn" onClick={() => navigate('/products/new')}>
+            <Plus size={20} /> 상품 등록
+          </button>
+        </div>
         <p>{products.length}개의 상품이 등록되어 있습니다.</p>
       </div>
 
