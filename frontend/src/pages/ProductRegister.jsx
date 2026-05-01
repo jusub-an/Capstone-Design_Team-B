@@ -17,7 +17,7 @@ function ProductRegister() {
   });
 
   const [sizes, setSizes] = useState([
-    { id: Date.now(), size_name: 'Free', length: '', chest: '', sleeve: '', neck: '' }
+    { id: Date.now(), size_name: 'Free', length: '', chest: '', sleeve: '', neck: '', waist: '', thigh: '', rise: '', hem: '' }
   ]);
   const [activeSizeId, setActiveSizeId] = useState(null);
 
@@ -82,7 +82,7 @@ function ProductRegister() {
         if (data.sizes && data.sizes.length > 0) {
           setSizes(data.sizes.map(s => ({ ...s, id: Math.random() })));
         } else {
-          setSizes([{ id: Date.now(), size_name: 'Free', length: '', chest: '', sleeve: '', neck: '' }]);
+          setSizes([{ id: Date.now(), size_name: 'Free', length: '', chest: '', sleeve: '', neck: '', waist: '', thigh: '', rise: '', hem: '' }]);
         }
       }
     } catch (error) {
@@ -321,23 +321,24 @@ function ProductRegister() {
       const shirtBlob = await cropToBlob(rectShirt);
       const a4Blob = await cropToBlob(rectA4);
 
-      const formData = new FormData();
-      formData.append('shirt_image', shirtBlob, 'shirt.jpg');
-      formData.append('a4_image', a4Blob, 'a4.jpg');
-      formData.append('shirt_x', rectShirt.x.toString());
-      formData.append('shirt_y', rectShirt.y.toString());
-      formData.append('shirt_w', rectShirt.w.toString());
-      formData.append('shirt_h', rectShirt.h.toString());
-      formData.append('a4_x', rectA4.x.toString());
-      formData.append('a4_y', rectA4.y.toString());
-      formData.append('a4_w', rectA4.w.toString());
-      formData.append('a4_h', rectA4.h.toString());
-      formData.append('orig_w', canvasRef.current.width.toString());
-      formData.append('orig_h', canvasRef.current.height.toString());
+      const reqFormData = new FormData();
+      reqFormData.append('shirt_image', shirtBlob, 'shirt.jpg');
+      reqFormData.append('a4_image', a4Blob, 'a4.jpg');
+      reqFormData.append('shirt_x', rectShirt.x.toString());
+      reqFormData.append('shirt_y', rectShirt.y.toString());
+      reqFormData.append('shirt_w', rectShirt.w.toString());
+      reqFormData.append('shirt_h', rectShirt.h.toString());
+      reqFormData.append('a4_x', rectA4.x.toString());
+      reqFormData.append('a4_y', rectA4.y.toString());
+      reqFormData.append('a4_w', rectA4.w.toString());
+      reqFormData.append('a4_h', rectA4.h.toString());
+      reqFormData.append('orig_w', canvasRef.current.width.toString());
+      reqFormData.append('orig_h', canvasRef.current.height.toString());
+      reqFormData.append('category_type', formData.category_type);
 
       const response = await fetch('http://localhost:8000/api/measure/clothing', {
         method: 'POST',
-        body: formData,
+        body: reqFormData,
       });
 
       if (response.ok) {
@@ -360,13 +361,24 @@ function ProductRegister() {
     if (!cvResultData || !activeSizeId) return;
     setSizes(prev => prev.map(s => {
       if (s.id === activeSizeId) {
-        return {
-          ...s,
-          length: cvResultData.length_cm,
-          chest: cvResultData.chest_cm,
-          sleeve: cvResultData.sleeve_width_cm,
-          neck: cvResultData.neck_width_cm
-        };
+        if (formData.category_type === 'Top') {
+          return {
+            ...s,
+            length: cvResultData.length_cm,
+            chest: cvResultData.chest_cm,
+            sleeve: cvResultData.sleeve_width_cm,
+            neck: cvResultData.neck_width_cm
+          };
+        } else {
+          return {
+            ...s,
+            length: cvResultData.length_cm,
+            waist: cvResultData.waist_cm,
+            thigh: cvResultData.thigh_cm,
+            rise: cvResultData.rise_cm,
+            hem: cvResultData.hem_cm
+          };
+        }
       }
       return s;
     }));
@@ -431,9 +443,20 @@ function ProductRegister() {
                 </div>
                 <div className="cv-result-values">
                   <div className="val-box"><span>총장</span><strong>{cvResultData.length_cm} cm</strong></div>
-                  <div className="val-box"><span>가슴단면</span><strong>{cvResultData.chest_cm} cm</strong></div>
-                  <div className="val-box"><span>소매끝단면</span><strong>{cvResultData.sleeve_width_cm} cm</strong></div>
-                  <div className="val-box"><span>넥라인</span><strong>{cvResultData.neck_width_cm} cm</strong></div>
+                  {formData.category_type === 'Top' ? (
+                    <>
+                      <div className="val-box"><span>가슴단면</span><strong>{cvResultData.chest_cm} cm</strong></div>
+                      <div className="val-box"><span>소매끝단면</span><strong>{cvResultData.sleeve_width_cm} cm</strong></div>
+                      <div className="val-box"><span>넥라인</span><strong>{cvResultData.neck_width_cm} cm</strong></div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="val-box"><span>허리단면</span><strong>{cvResultData.waist_cm} cm</strong></div>
+                      <div className="val-box"><span>허벅지단면</span><strong>{cvResultData.thigh_cm} cm</strong></div>
+                      <div className="val-box"><span>밑위</span><strong>{cvResultData.rise_cm} cm</strong></div>
+                      <div className="val-box"><span>밑단단면</span><strong>{cvResultData.hem_cm} cm</strong></div>
+                    </>
+                  )}
                 </div>
               </div>
             )}
@@ -500,7 +523,7 @@ function ProductRegister() {
               <button 
                 type="button" 
                 className="add-size-btn"
-                onClick={() => setSizes(prev => [...prev, { id: Date.now(), size_name: '', length: '', chest: '', sleeve: '', neck: '' }])}
+                onClick={() => setSizes(prev => [...prev, { id: Date.now(), size_name: '', length: '', chest: '', sleeve: '', neck: '', waist: '', thigh: '', rise: '', hem: '' }])}
               >
                 + 사이즈 추가
               </button>
@@ -522,14 +545,11 @@ function ProductRegister() {
                       <div className="ai-btn-wrapper">
                         <button 
                           type="button" 
-                          className={`ai-extract-btn ${formData.category_type === 'Top' ? 'active' : 'disabled'}`}
+                          className="ai-extract-btn active"
                           onClick={() => {
-                            if (formData.category_type === 'Top') {
-                              setActiveSizeId(size.id);
-                              setShowCvModal(true);
-                            }
+                            setActiveSizeId(size.id);
+                            setShowCvModal(true);
                           }}
-                          disabled={formData.category_type !== 'Top'}
                         >
                           ✨ AI 측정
                         </button>
@@ -551,18 +571,41 @@ function ProductRegister() {
                       <span>총장</span>
                       <input type="number" step="0.1" value={size.length} onChange={(e) => setSizes(prev => prev.map(s => s.id === size.id ? {...s, length: e.target.value} : s))} placeholder="0.0" />
                     </div>
-                    <div className="m-input">
-                      <span>가슴단면</span>
-                      <input type="number" step="0.1" value={size.chest} onChange={(e) => setSizes(prev => prev.map(s => s.id === size.id ? {...s, chest: e.target.value} : s))} placeholder="0.0" />
-                    </div>
-                    <div className="m-input">
-                      <span>소매끝단면</span>
-                      <input type="number" step="0.1" value={size.sleeve} onChange={(e) => setSizes(prev => prev.map(s => s.id === size.id ? {...s, sleeve: e.target.value} : s))} placeholder="0.0" />
-                    </div>
-                    <div className="m-input">
-                      <span>넥라인</span>
-                      <input type="number" step="0.1" value={size.neck} onChange={(e) => setSizes(prev => prev.map(s => s.id === size.id ? {...s, neck: e.target.value} : s))} placeholder="0.0" />
-                    </div>
+                    {formData.category_type === 'Top' ? (
+                      <>
+                        <div className="m-input">
+                          <span>가슴단면</span>
+                          <input type="number" step="0.1" value={size.chest || ''} onChange={(e) => setSizes(prev => prev.map(s => s.id === size.id ? {...s, chest: e.target.value} : s))} placeholder="0.0" />
+                        </div>
+                        <div className="m-input">
+                          <span>소매끝단면</span>
+                          <input type="number" step="0.1" value={size.sleeve || ''} onChange={(e) => setSizes(prev => prev.map(s => s.id === size.id ? {...s, sleeve: e.target.value} : s))} placeholder="0.0" />
+                        </div>
+                        <div className="m-input">
+                          <span>넥라인</span>
+                          <input type="number" step="0.1" value={size.neck || ''} onChange={(e) => setSizes(prev => prev.map(s => s.id === size.id ? {...s, neck: e.target.value} : s))} placeholder="0.0" />
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="m-input">
+                          <span>허리단면</span>
+                          <input type="number" step="0.1" value={size.waist || ''} onChange={(e) => setSizes(prev => prev.map(s => s.id === size.id ? {...s, waist: e.target.value} : s))} placeholder="0.0" />
+                        </div>
+                        <div className="m-input">
+                          <span>허벅지단면</span>
+                          <input type="number" step="0.1" value={size.thigh || ''} onChange={(e) => setSizes(prev => prev.map(s => s.id === size.id ? {...s, thigh: e.target.value} : s))} placeholder="0.0" />
+                        </div>
+                        <div className="m-input">
+                          <span>밑위</span>
+                          <input type="number" step="0.1" value={size.rise || ''} onChange={(e) => setSizes(prev => prev.map(s => s.id === size.id ? {...s, rise: e.target.value} : s))} placeholder="0.0" />
+                        </div>
+                        <div className="m-input">
+                          <span>밑단단면</span>
+                          <input type="number" step="0.1" value={size.hem || ''} onChange={(e) => setSizes(prev => prev.map(s => s.id === size.id ? {...s, hem: e.target.value} : s))} placeholder="0.0" />
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               ))}

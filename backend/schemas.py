@@ -34,6 +34,10 @@ class ProductSizeBase(BaseModel):
     chest: float | None = None
     sleeve: float | None = None
     neck: float | None = None
+    waist: float | None = None
+    thigh: float | None = None
+    rise: float | None = None
+    hem: float | None = None
 
 class ProductSizeCreate(ProductSizeBase):
     pass

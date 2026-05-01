@@ -37,7 +37,25 @@ app = FastAPI(title="Capstone Design FastAPI", version="1.0.0")
 @app.on_event("startup")
 def startup():
     get_measure_engine()
+    auto_migrate_db()
     seed_data()
+
+def auto_migrate_db():
+    from sqlalchemy import text
+    from database import engine
+    with engine.connect() as conn:
+        try:
+            conn.execute(text("SELECT waist FROM product_sizes WHERE 1=0"))
+        except Exception:
+            try:
+                conn.execute(text("ALTER TABLE product_sizes ADD waist FLOAT"))
+                conn.execute(text("ALTER TABLE product_sizes ADD thigh FLOAT"))
+                conn.execute(text("ALTER TABLE product_sizes ADD rise FLOAT"))
+                conn.execute(text("ALTER TABLE product_sizes ADD hem FLOAT"))
+                conn.commit()
+                print("DB auto-migration completed: added bottom columns to product_sizes.")
+            except Exception as e:
+                print(f"DB auto-migration failed: {e}")
 
 def seed_data():
     from database import SessionLocal
@@ -168,6 +186,7 @@ async def measure_clothing(
     a4_h: float = Form(...),
     orig_w: float = Form(...),
     orig_h: float = Form(...),
+    category_type: str = Form('Top'),
 ):
     shirt_bytes = await shirt_image.read()
     a4_bytes = await a4_image.read()
@@ -181,7 +200,8 @@ async def measure_clothing(
             engine.process, 
             shirt_bytes, a4_bytes, 
             shirt_rect, a4_rect, 
-            orig_w, orig_h
+            orig_w, orig_h,
+            category_type
         )
         return result
     except ValueError as e:
@@ -262,7 +282,11 @@ def create_product(
                     length=s.get("length"),
                     chest=s.get("chest"),
                     sleeve=s.get("sleeve"),
-                    neck=s.get("neck")
+                    neck=s.get("neck"),
+                    waist=s.get("waist"),
+                    thigh=s.get("thigh"),
+                    rise=s.get("rise"),
+                    hem=s.get("hem")
                 )
                 db.add(new_size)
 
@@ -313,7 +337,11 @@ def update_product(
                 length=s.get("length"),
                 chest=s.get("chest"),
                 sleeve=s.get("sleeve"),
-                neck=s.get("neck")
+                neck=s.get("neck"),
+                waist=s.get("waist"),
+                thigh=s.get("thigh"),
+                rise=s.get("rise"),
+                hem=s.get("hem")
             )
             db.add(new_size)
     

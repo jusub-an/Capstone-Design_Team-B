@@ -46,10 +46,20 @@ class ProductSize(Base):
     id = Column(Integer, Identity(start=1), primary_key=True)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
     size_name = Column(String(50), nullable=False)
+    
+    # Common
     length = Column(Float, nullable=True)
+    
+    # Top
     chest = Column(Float, nullable=True)
     sleeve = Column(Float, nullable=True)
     neck = Column(Float, nullable=True)
+    
+    # Bottom
+    waist = Column(Float, nullable=True)
+    thigh = Column(Float, nullable=True)
+    rise = Column(Float, nullable=True)
+    hem = Column(Float, nullable=True)
 
     product = relationship("Product", back_populates="sizes")
 
