@@ -8,3 +8,5 @@ python-multipart==0.0.9
 mediapipe==0.10.14
 opencv-python==4.10.0.84
 numpy==1.26.4
+rembg==2.0.56
+Pillow>=10.0.0

@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 가상 피팅 치수 측정기 (초기화 버그 완벽 수정)</title>
+    
+    <script>
+        function logMsg(msg, isError = false) {
+            const logBox = document.getElementById('debugLog');
+            if (logBox) {
+                const p = document.createElement('p');
+                p.style.color = isError ? '#ff4444' : '#4CAF50';
+                p.style.margin = '5px 0';
+                p.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+                logBox.appendChild(p);
+                logBox.scrollTop = logBox.scrollHeight;
+            }
+            console[isError ? 'error' : 'log'](msg);
+        }
+        
+        let isCvReady = false;
+        let isAiReady = false;
+
+        window.onOpenCvReady = function() {
+            isCvReady = true;
+            logMsg('✅ OpenCV 엔진 로드 성공!');
+            window.checkReadyState();
+        };
+
+        window.checkReadyState = function() {
+            if(isCvReady && isAiReady) {
+                const btn = document.getElementById('captureBtn');
+                btn.innerHTML = "📸 사진 업로드 및 분석 시작";
+                btn.style.pointerEvents = "auto";
+                btn.style.opacity = "1";
+                btn.style.backgroundColor = "#4CAF50";
+            }
+        };
+    </script>
+
+    <script async src="https://docs.opencv.org/4.8.0/opencv.js" onload="window.onOpenCvReady();" onerror="logMsg('❌ OpenCV 로드 실패!', true)"></script>
+
+    <script type="module">
+        import { removeBackground } from "https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.5.5/+esm";
+        window.removeBg = removeBackground;
+        isAiReady = true;
+        logMsg('✅ @imgly AI 모듈 준비 완료!');
+        window.checkReadyState();
+    </script>
+
+    <style>
+        body { font-family: "Segoe UI", Roboto, sans-serif; background-color: #121212; color: #fff; text-align: center; padding: 20px; margin: 0; }
+        .btn { background-color: #4CAF50; color: white; padding: 15px 25px; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; margin: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); transition: 0.3s; }
+        .btn:active { transform: scale(0.95); }
+        
+        #uiContainer { position: relative; display: inline-block; margin-top: 20px; max-width: 100%; }
+        #interactionCanvas { border-radius: 10px; box-shadow: 0 4px 15px rgba(255,255,255,0.1); cursor: crosshair; touch-action: none; max-width: 100%; }
+        
+        #instruction { margin-top: 15px; font-size: 18px; font-weight: bold; color: #ffdd57; padding: 10px; background: #222; border-radius: 8px; display: inline-block; }
+        
+        #loader { display: none; margin-top: 30px; }
+        .spinner { border: 4px solid rgba(255,255,255,0.2); border-top: 4px solid #fff; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        #resultBox { display: none; background-color: #222; padding: 20px; border-radius: 12px; margin-top: 20px; text-align: left; max-width: 400px; margin-left: auto; margin-right: auto; }
+        .result-item { display: flex; justify-content: space-between; border-bottom: 1px solid #333; padding: 12px 0; font-size: 17px;}
+        
+        #debugPanel { background-color: #000; border: 1px solid #555; padding: 10px; margin-top: 30px; border-radius: 8px; text-align: left; font-size: 12px; height: 120px; overflow-y: auto; font-family: monospace; }
+        #debugPanel h4 { margin: 0 0 10px 0; color: #aaa; text-align: center; }
+
+        .checkerboard { background-color: #1a1a1a; background-image: linear-gradient(45deg, #2b2b2b 25%, transparent 25%), linear-gradient(-45deg, #2b2b2b 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #2b2b2b 75%), linear-gradient(-45deg, transparent 75%, #2b2b2b 75%); background-size: 20px 20px; background-position: 0 0, 0 10px, 10px -10px, -10px 0px; }
+        
+        #maskViews { display: none; margin-top: 30px; background-color: #1a1a1a; padding: 15px; border-radius: 10px; border: 1px dashed #555; }
+        .mask-container { display: flex; justify-content: center; gap: 20px; flex-wrap: wrap; margin-top: 15px; margin-bottom: 20px; border-bottom: 1px dashed #333; padding-bottom: 20px; }
+        .mask-container:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+        .mask-wrapper { width: 45%; min-width: 200px; }
+        .mask-wrapper img { width: 100%; border: 1px solid #444; border-radius: 5px; background: #000; }
+        .mask-label { font-size: 14px; color: #ccc; margin-bottom: 8px; font-weight: bold;}
+    </style>
+</head>
+<body>
+    <h2>👕 스마트 의류 치수 추출기</h2>
+    <p style="color:#aaa; font-size:14px;">정확한 추출을 위해 의류와 A4 용지의 영역을 각각 지정해주세요.</p>
+    
+    <label for="cameraInput" class="btn" id="captureBtn" style="pointer-events: none; opacity: 0.5; background-color: #888;">엔진 로딩 중...</label>
+    <input type="file" id="cameraInput" accept="image/*" style="display: none;">
+    
+    <div id="instruction" style="display: none;">1️⃣ 원본 이미지에서 <span style="color:#ff4444;">의류 영역</span>을 드래그하여 박스를 쳐주세요.</div>
+    <br>
+    <button id="resetBoxBtn" class="btn" style="display: none; background-color: #ff9800;">다시 그리기</button>
+    <button id="startAiBtn" class="btn" style="display: none; background-color: #2196F3;">🚀 AI 분석 시작</button>
+
+    <div id="uiContainer">
+        <canvas id="interactionCanvas" style="display: none;"></canvas>
+    </div>
+    
+    <div id="loader">
+        <div class="spinner"></div>
+        <p id="loaderText" style="margin-top:15px; font-size:16px;">AI 누끼 추출 및 텐서 기하학 분석 중...</p>
+    </div>
+    
+    <div id="resultBox">
+        <h3 style="text-align:center; color:#4CAF50; margin-top:0;">자동 실측 완료 (단위: cm)</h3>
+        <div id="resultText"></div>
+    </div>
+
+    <div id="maskViews">
+        <h4 style="color:#ffdd57; margin:0; margin-bottom: 10px;">🛠️ 파이프라인 디버깅 뷰 (크롭 원본 vs AI 출력)</h4>
+        
+        <div class="mask-container">
+            <div class="mask-wrapper">
+                <div class="mask-label">👕 [1-1] 의류 크롭 원본 (AI 입력)</div>
+                <div><img id="shirtCropImg"></div>
+            </div>
+            <div class="mask-wrapper">
+                <div class="mask-label">👕 [1-2] 의류 마스크 (AI 출력)</div>
+                <div class="checkerboard" style="border-radius: 5px;"><img id="shirtMaskImg"></div>
+            </div>
+        </div>
+
+        <div class="mask-container">
+            <div class="mask-wrapper">
+                <div class="mask-label">📄 [2-1] A4 크롭 원본 (AI 입력)</div>
+                <div><img id="a4CropImg"></div>
+            </div>
+            <div class="mask-wrapper">
+                <div class="mask-label">📄 [2-2] A4 마스크 (AI 출력)</div>
+                <div class="checkerboard" style="border-radius: 5px;"><img id="a4MaskImg"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="debugPanel">
+        <h4>[ 시스템 상태창 ]</h4>
+        <div id="debugLog"></div>
+    </div>
+
+    <script>
+        function calcDist(p1, p2) { return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2)); }
+        function distToSegment(p, a, b) {
+            let line_len = Math.hypot(b.x - a.x, b.y - a.y);
+            if (line_len === 0) return Math.hypot(p.x - a.x, p.y - a.y);
+            let u = ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / (line_len * line_len);
+            let projX = a.x + u * (b.x - a.x);
+            let projY = a.y + u * (b.y - a.y);
+            return Math.hypot(p.x - projX, p.y - projY);
+        }
+
+        function warpPoint(px, py, M_data) {
+            let x = M_data[0]*px + M_data[1]*py + M_data[2];
+            let y = M_data[3]*px + M_data[4]*py + M_data[5];
+            let w = M_data[6]*px + M_data[7]*py + M_data[8];
+            return { x: x/w, y: y/w };
+        }
+
+        const cameraInput = document.getElementById('cameraInput');
+        const interactionCanvas = document.getElementById('interactionCanvas');
+        const ctx = interactionCanvas.getContext('2d', { willReadFrequently: true });
+        const instruction = document.getElementById('instruction');
+        const resetBoxBtn = document.getElementById('resetBoxBtn');
+        const startAiBtn = document.getElementById('startAiBtn');
+        const loader = document.getElementById('loader');
+        const resultBox = document.getElementById('resultBox');
+        const maskViews = document.getElementById('maskViews');
+        
+        const shirtCropImg = document.getElementById('shirtCropImg');
+        const shirtMaskImg = document.getElementById('shirtMaskImg');
+        const a4CropImg = document.getElementById('a4CropImg');
+        const a4MaskImg = document.getElementById('a4MaskImg');
+
+        let imgObj = null;
+        let scaleFactor = 1; 
+        // 💡 [버그 수정] 초기 캔버스(원본 이미지) 사이즈를 저장할 변수 추가
+        let baseCanvasW = 0, baseCanvasH = 0;
+        
+        let drawState = 0; 
+        let rectShirt = null;
+        let rectA4 = null;
+        let startX = 0, startY = 0;
+        let isDrawing = false;
+        let currentRect = {x:0, y:0, w:0, h:0};
+
+        function getPos(e) {
+            const rect = interactionCanvas.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            return {
+                x: (clientX - rect.left) * (interactionCanvas.width / rect.width),
+                y: (clientY - rect.top) * (interactionCanvas.height / rect.height)
+            };
+        }
+
+        function redrawCanvas() {
+            if (!imgObj) return;
+            ctx.clearRect(0, 0, interactionCanvas.width, interactionCanvas.height);
+            ctx.drawImage(imgObj, 0, 0, interactionCanvas.width, interactionCanvas.height);
+
+            const drawRect = (r, color, text) => {
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 3;
+                ctx.strokeRect(r.x, r.y, r.w, r.h);
+                ctx.font = "bold 16px sans-serif";
+                const textWidth = ctx.measureText(text).width;
+                ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+                ctx.fillRect(r.x, r.y - 25, textWidth + 10, 25);
+                ctx.fillStyle = color;
+                ctx.fillText(text, r.x + 5, r.y - 8);
+            };
+
+            if (rectShirt) drawRect(rectShirt, "#ff4444", "의류 (Shirt)");
+            if (rectA4) drawRect(rectA4, "#4CAF50", "A4 용지");
+            
+            if (isDrawing) {
+                let color = drawState === 1 ? "#ff4444" : "#4CAF50";
+                ctx.strokeStyle = color;
+                ctx.setLineDash([5, 5]);
+                ctx.lineWidth = 2;
+                ctx.strokeRect(currentRect.x, currentRect.y, currentRect.w, currentRect.h);
+                ctx.setLineDash([]);
+            }
+        }
+
+        const onDown = (e) => {
+            if (drawState !== 1 && drawState !== 2) return;
+            e.preventDefault();
+            const pos = getPos(e);
+            startX = pos.x; startY = pos.y;
+            isDrawing = true;
+        };
+
+        const onMove = (e) => {
+            if (!isDrawing) return;
+            e.preventDefault();
+            const pos = getPos(e);
+            currentRect = { x: Math.min(startX, pos.x), y: Math.min(startY, pos.y), w: Math.abs(pos.x - startX), h: Math.abs(pos.y - startY) };
+            redrawCanvas();
+        };
+
+        const onUp = (e) => {
+            if (!isDrawing) return;
+            isDrawing = false;
+            if (currentRect.w > 30 && currentRect.h > 30) {
+                if (drawState === 1) {
+                    rectShirt = { ...currentRect };
+                    drawState = 2;
+                    instruction.innerHTML = "2️⃣ 원본 이미지에서 <span style='color:#4CAF50;'>A4 용지 영역</span>을 드래그하여 박스를 쳐주세요.";
+                } else if (drawState === 2) {
+                    rectA4 = { ...currentRect };
+                    drawState = 3;
+                    instruction.innerHTML = "✅ 영역 지정 완료! 하단의 분석 시작 버튼을 눌러주세요.";
+                    startAiBtn.style.display = "inline-block";
+                }
+            }
+            redrawCanvas();
+        };
+
+        interactionCanvas.addEventListener('mousedown', onDown);
+        interactionCanvas.addEventListener('mousemove', onMove);
+        interactionCanvas.addEventListener('mouseup', onUp);
+        interactionCanvas.addEventListener('touchstart', onDown, {passive: false});
+        interactionCanvas.addEventListener('touchmove', onMove, {passive: false});
+        interactionCanvas.addEventListener('touchend', onUp);
+
+        // 💡 [버그 수정] 새로 측정 시 캔버스 크기를 무조건 초기 크기(baseCanvas)로 복원합니다.
+        resetBoxBtn.addEventListener('click', () => {
+            interactionCanvas.width = baseCanvasW;
+            interactionCanvas.height = baseCanvasH;
+            rectShirt = null; rectA4 = null; currentRect = {x:0, y:0, w:0, h:0};
+            drawState = 1;
+            instruction.innerHTML = "1️⃣ 원본 이미지에서 <span style='color:#ff4444;'>의류 영역</span>을 드래그하여 박스를 쳐주세요.";
+            startAiBtn.style.display = "none";
+            resultBox.style.display = "none";
+            maskViews.style.display = "none";
+            redrawCanvas();
+        });
+
+        cameraInput.addEventListener('change', (e) => {
+            if (!isCvReady || !isAiReady) return;
+            if (e.target.files && e.target.files[0]) {
+                const file = e.target.files[0];
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    imgObj = new Image();
+                    imgObj.onload = function() {
+                        const MAX_WIDTH = 800;
+                        let w = imgObj.width, h = imgObj.height;
+                        if (w > MAX_WIDTH) { scaleFactor = MAX_WIDTH / w; h = Math.round(h * scaleFactor); w = MAX_WIDTH; } 
+                        else { scaleFactor = 1; }
+                        
+                        // 💡 [버그 수정] 이미지 최초 로드 시의 원본 캔버스 크기 저장
+                        baseCanvasW = w;
+                        baseCanvasH = h;
+                        
+                        interactionCanvas.width = w; interactionCanvas.height = h;
+                        interactionCanvas.style.display = "block";
+                        instruction.style.display = "inline-block";
+                        resetBoxBtn.style.display = "inline-block";
+                        document.getElementById('captureBtn').style.display = "none";
+                        rectShirt = null; rectA4 = null; drawState = 1;
+                        instruction.innerHTML = "1️⃣ 원본 이미지에서 <span style='color:#ff4444;'>의류 영역</span>을 드래그하여 박스를 쳐주세요.";
+                        startAiBtn.style.display = "none";
+                        resultBox.style.display = "none";
+                        maskViews.style.display = "none";
+                        redrawCanvas();
+                    }
+                    imgObj.src = event.target.result;
+                }
+                reader.readAsDataURL(file);
+            }
+        });
+
+        function cropCanvasToBlob(rect) {
+            const temp = document.createElement('canvas');
+            temp.width = rect.w; temp.height = rect.h;
+            const sx = rect.x / scaleFactor, sy = rect.y / scaleFactor, sw = rect.w / scaleFactor, sh = rect.h / scaleFactor;
+            temp.getContext('2d').drawImage(imgObj, sx, sy, sw, sh, 0, 0, rect.w, rect.h);
+            return new Promise(res => temp.toBlob(res, 'image/jpeg'));
+        }
+
+        startAiBtn.addEventListener('click', async () => {
+            instruction.style.display = "none";
+            resetBoxBtn.style.display = "none";
+            startAiBtn.style.display = "none";
+            loader.style.display = "block";
+            
+            const tempShirt = rectShirt, tempA4 = rectA4;
+            rectShirt = null; rectA4 = null; isDrawing = false;
+            redrawCanvas();
+
+            let originalSrc = cv.imread('interactionCanvas');
+            let src = originalSrc.clone();
+            rectShirt = tempShirt; rectA4 = tempA4;
+
+            try {
+                logMsg("🤖 영역 1: 의류 영역 독립 분석 중...");
+                let blobShirt = await cropCanvasToBlob(rectShirt);
+                shirtCropImg.src = URL.createObjectURL(blobShirt); 
+                let maskBlobShirt = await window.removeBg(blobShirt);
+                let imgShirt = new Image();
+                await new Promise(r => { imgShirt.onload = r; imgShirt.src = URL.createObjectURL(maskBlobShirt); });
+
+                logMsg("🤖 영역 2: A4 영역 독립 분석 중...");
+                let blobA4 = await cropCanvasToBlob(rectA4);
+                a4CropImg.src = URL.createObjectURL(blobA4);
+                let maskBlobA4 = await window.removeBg(blobA4);
+                let imgA4 = new Image();
+                await new Promise(r => { imgA4.onload = r; imgA4.src = URL.createObjectURL(maskBlobA4); });
+
+                shirtMaskImg.src = imgShirt.src;
+                a4MaskImg.src = imgA4.src;
+                maskViews.style.display = "block";
+
+                // ==========================================
+                // 📄 1. A4 용지 분석
+                // ==========================================
+                let tempA4Canvas = document.createElement('canvas');
+                tempA4Canvas.width = rectA4.w; tempA4Canvas.height = rectA4.h;
+                tempA4Canvas.getContext('2d').drawImage(imgA4, 0, 0);
+                
+                let a4Mat = cv.imread(tempA4Canvas);
+                let rgbaPlanesA4 = new cv.MatVector();
+                cv.split(a4Mat, rgbaPlanesA4);
+                let a4Alpha = rgbaPlanesA4.get(3); 
+                cv.threshold(a4Alpha, a4Alpha, 10, 255, cv.THRESH_BINARY);
+                
+                let contoursA4 = new cv.MatVector(), hierarchyA4 = new cv.Mat();
+                cv.findContours(a4Alpha, contoursA4, hierarchyA4, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+                if (contoursA4.size() === 0) throw new Error("A4_NOT_FOUND");
+
+                let maxArea = 0; let largestContourIndex = 0;
+                for (let i = 0; i < contoursA4.size(); i++) {
+                    let area = cv.contourArea(contoursA4.get(i));
+                    if (area > maxArea) { maxArea = area; largestContourIndex = i; }
+                }
+                if (maxArea < 1000) throw new Error("A4_TOO_SMALL");
+
+                let cntA4 = contoursA4.get(largestContourIndex);
+                let peri = cv.arcLength(cntA4, true);
+                let approx = new cv.Mat();
+                cv.approxPolyDP(cntA4, approx, 0.04 * peri, true); 
+                if (approx.rows !== 4) throw new Error("A4_NOT_QUAD");
+
+                let pts = [];
+                for (let j = 0; j < 4; j++) { pts.push({x: approx.data32S[j*2] + rectA4.x, y: approx.data32S[j*2+1] + rectA4.y}); }
+
+                let sum = pts.map(p => p.x + p.y), diff = pts.map(p => p.x - p.y);
+                let tl = pts[sum.indexOf(Math.min(...sum))], br = pts[sum.indexOf(Math.max(...sum))];
+                let tr = pts[diff.indexOf(Math.max(...diff))], bl = pts[diff.indexOf(Math.min(...diff))];
+
+                let wTop = Math.hypot(tl.x - tr.x, tl.y - tr.y), wBot = Math.hypot(bl.x - br.x, bl.y - br.y);
+                let hLef = Math.hypot(tl.x - bl.x, tl.y - bl.y), hRig = Math.hypot(tr.x - br.x, tr.y - br.y);
+                let dstW = Math.max(wTop, wBot); 
+                let dstH = dstW * (29.7 / 21.0); 
+
+                let dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [tl.x, tl.y, tl.x + dstW, tl.y, tl.x + dstW, tl.y + dstH, tl.x, tl.y + dstH]);
+                let srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [tl.x, tl.y, tr.x, tr.y, br.x, br.y, bl.x, bl.y]);
+
+                let M = cv.getPerspectiveTransform(srcTri, dstTri);
+
+                logMsg("📏 원본 잘림 방지를 위한 캔버스 확장 매트릭스 계산 중...");
+                let M_data = M.data64F;
+                
+                let corners = [ warpPoint(0, 0, M_data), warpPoint(src.cols, 0, M_data), warpPoint(src.cols, src.rows, M_data), warpPoint(0, src.rows, M_data) ];
+                let minX = Math.min(...corners.map(p => p.x)), minY = Math.min(...corners.map(p => p.y));
+                let maxX = Math.max(...corners.map(p => p.x)), maxY = Math.max(...corners.map(p => p.y));
+
+                let dx = -Math.min(0, Math.round(minX)), dy = -Math.min(0, Math.round(minY));
+                let newWidth = Math.round(maxX + dx), newHeight = Math.round(maxY + dy);
+
+                const MAX_CANVAS_SIZE = 4000;
+                if (newWidth > MAX_CANVAS_SIZE || newHeight > MAX_CANVAS_SIZE) { throw new Error("WARP_TOO_LARGE"); }
+
+                let T = cv.matFromArray(3, 3, cv.CV_64F, [1, 0, dx, 0, 1, dy, 0, 0, 1]);
+                let M_new = new cv.Mat();
+                cv.gemm(T, M, 1, new cv.Mat(), 0, M_new);
+
+                let warpedSrc = new cv.Mat();
+                cv.warpPerspective(src, warpedSrc, M_new, new cv.Size(newWidth, newHeight));
+                src.delete(); src = warpedSrc;
+
+                interactionCanvas.width = newWidth; interactionCanvas.height = newHeight;
+
+                let ppcm_w = dstW / 21.0, ppcm_h = dstH / 29.7;
+                let ppcm = (ppcm_w + ppcm_h) / 2.0;
+
+                let cCyan = new cv.Scalar(0, 255, 255, 255);
+                cv.rectangle(src, new cv.Point(tl.x + dx, tl.y + dy), new cv.Point(tl.x + dstW + dx, tl.y + dstH + dy), cCyan, 2);
+                let dotColorA4 = new cv.Scalar(255, 0, 255, 255);
+                let a4Corners = [ {x:tl.x+dx, y:tl.y+dy}, {x:tl.x+dstW+dx, y:tl.y+dy}, {x:tl.x+dstW+dx, y:tl.y+dstH+dy}, {x:tl.x+dx, y:tl.y+dstH+dy} ];
+                for(let pt of a4Corners) { cv.circle(src, new cv.Point(pt.x, pt.y), 6, dotColorA4, -1); }
+                cv.putText(src, "A4 Paper (Reference)", new cv.Point(tl.x + dx, tl.y + dy - 10), cv.FONT_HERSHEY_SIMPLEX, 0.6, cCyan, 2);
+
+                // ==========================================
+                // 👕 2. 의류 마스크 병합 
+                // ==========================================
+                logMsg("👕 의류 마스크 평활화 중 (AI 실루엣 100% 보존)...");
+                let fullShirtMask = cv.Mat.zeros(originalSrc.rows, originalSrc.cols, cv.CV_8UC1);
+                let tempShirtCanvas = document.createElement('canvas');
+                tempShirtCanvas.width = rectShirt.w; tempShirtCanvas.height = rectShirt.h;
+                tempShirtCanvas.getContext('2d').drawImage(imgShirt, 0, 0);
+                
+                let shirtMat = cv.imread(tempShirtCanvas);
+                let rgbaPlanesShirt = new cv.MatVector();
+                cv.split(shirtMat, rgbaPlanesShirt);
+                let shirtAlpha = rgbaPlanesShirt.get(3); 
+                cv.threshold(shirtAlpha, shirtAlpha, 10, 255, cv.THRESH_BINARY);
+
+                let roi = fullShirtMask.roi(new cv.Rect(rectShirt.x, rectShirt.y, rectShirt.w, rectShirt.h));
+                shirtAlpha.copyTo(roi);
+
+                let warpedShirtMask = new cv.Mat();
+                cv.warpPerspective(fullShirtMask, warpedShirtMask, M_new, new cv.Size(newWidth, newHeight), cv.INTER_NEAREST);
+                cv.threshold(warpedShirtMask, warpedShirtMask, 127, 255, cv.THRESH_BINARY);
+
+                let contoursShirt = new cv.MatVector(), hierarchyShirt = new cv.Mat();
+                cv.findContours(warpedShirtMask, contoursShirt, hierarchyShirt, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+                if (contoursShirt.size() === 0) throw new Error("SHIRT_NOT_FOUND");
+
+                let maxAreaS = 0; let sIdx = 0;
+                for (let i = 0; i < contoursShirt.size(); i++) {
+                    let a = cv.contourArea(contoursShirt.get(i));
+                    if(a > maxAreaS) { maxAreaS = a; sIdx = i; }
+                }
+
+                let tshirt_cnt = contoursShirt.get(sIdx).clone();
+                let rect = cv.boundingRect(tshirt_cnt);
+                let mid_x = rect.x + rect.width / 2;
+
+                let hull = new cv.Mat(), hullIndices = new cv.Mat(), defects = new cv.Mat();
+                cv.convexHull(tshirt_cnt, hullIndices, false, false);
+                cv.convexityDefects(tshirt_cnt, hullIndices, defects);
+
+                let armpit_l = null, armpit_r = null;
+                let min_y_l_def = 99999, min_y_r_def = 99999;
+                let idx_al = -1, idx_ar = -1; 
+
+                for (let i = 0; i < defects.rows; ++i) {
+                    let farthestIdx = defects.data32S[i * 4 + 2];
+                    let depth = defects.data32S[i * 4 + 3] / 256.0;
+                    let fx = tshirt_cnt.data32S[farthestIdx * 2], fy = tshirt_cnt.data32S[farthestIdx * 2 + 1];
+
+                    if (depth > 10.0 && fy > rect.y + rect.height * 0.15 && fy < rect.y + rect.height * 0.6) {
+                        if (fx < mid_x) {
+                            if (fy < min_y_l_def) { min_y_l_def = fy; armpit_l = {x: fx, y: fy}; idx_al = farthestIdx; }
+                        } else {
+                            if (fy < min_y_r_def) { min_y_r_def = fy; armpit_r = {x: fx, y: fy}; idx_ar = farthestIdx; }
+                        }
+                    }
+                }
+
+                if (!armpit_l) {
+                    let min_x = 99999;
+                    for (let i = 0; i < tshirt_cnt.rows; i++) {
+                        let px = tshirt_cnt.data32S[i*2], py = tshirt_cnt.data32S[i*2+1];
+                        if (py > rect.y + rect.height * 0.2 && py < rect.y + rect.height * 0.5 && px < mid_x) {
+                            if (px < min_x) { min_x = px; armpit_l = {x: px, y: py}; idx_al = i; }
+                        }
+                    }
+                    if (!armpit_l) { armpit_l = {x: rect.x, y: rect.y + rect.height/2}; idx_al = 0; }
+                }
+                
+                if (!armpit_r) {
+                    let max_x = -99999;
+                    for (let i = 0; i < tshirt_cnt.rows; i++) {
+                        let px = tshirt_cnt.data32S[i*2], py = tshirt_cnt.data32S[i*2+1];
+                        if (py > rect.y + rect.height * 0.2 && py < rect.y + rect.height * 0.5 && px > mid_x) {
+                            if (px > max_x) { max_x = px; armpit_r = {x: px, y: py}; idx_ar = i; }
+                        }
+                    }
+                    if (!armpit_r) { armpit_r = {x: rect.x + rect.width, y: rect.y + rect.height/2}; idx_ar = 0; } 
+                }
+
+                let dynamic_cx = (armpit_l.x + armpit_r.x) / 2;
+
+                let sl_top = {x: 99999, y: 0}, sr_top = {x: -99999, y: 0};
+                let idx_stl = -1, idx_str = -1;
+
+                for (let i = 0; i < tshirt_cnt.rows; i++) {
+                    let px = tshirt_cnt.data32S[i*2], py = tshirt_cnt.data32S[i*2+1];
+                    if (px < sl_top.x) { sl_top = {x: px, y: py}; idx_stl = i; }
+                    if (px > sr_top.x) { sr_top = {x: px, y: py}; idx_str = i; }
+                }
+
+                function getShortestPath(cnt, idx1, idx2) {
+                    let n = cnt.rows;
+                    let dist1 = Math.abs(idx1 - idx2);
+                    let dist2 = n - dist1;
+                    let path = [];
+                    let step, length;
+                    if (dist1 <= dist2) { step = idx1 < idx2 ? 1 : -1; length = dist1; } 
+                    else { step = idx1 < idx2 ? -1 : 1; length = dist2; }
+                    let curr = idx1;
+                    for (let i = 0; i <= length; i++) { path.push({x: cnt.data32S[curr*2], y: cnt.data32S[curr*2+1], idx: curr}); curr = (curr + step + n) % n; }
+                    return path;
+                }
+
+                let path_sleeve_l = getShortestPath(tshirt_cnt, idx_al, idx_stl);
+                let sl_bot = armpit_l; let max_d_sl = -1;
+                for(let p of path_sleeve_l) { let d = distToSegment(p, armpit_l, sl_top); if (d > max_d_sl) { max_d_sl = d; sl_bot = p; } }
+
+                let path_sleeve_r = getShortestPath(tshirt_cnt, idx_ar, idx_str);
+                let sr_bot = armpit_r; let max_d_sr = -1;
+                for(let p of path_sleeve_r) { let d = distToSegment(p, armpit_r, sr_top); if (d > max_d_sr) { max_d_sr = d; sr_bot = p; } }
+
+                let neck_l = {x: dynamic_cx, y: 99999}, neck_r = {x: dynamic_cx, y: 99999};
+                let idx_nl = -1, idx_nr = -1;
+                let margin = (armpit_r.x - armpit_l.x) * 0.1; 
+
+                for (let i = 0; i < tshirt_cnt.rows; i++) {
+                    let px = tshirt_cnt.data32S[i*2], py = tshirt_cnt.data32S[i*2+1];
+                    if (py < armpit_l.y && py < armpit_r.y) { 
+                        if (px > armpit_l.x && px < dynamic_cx - margin) {
+                            if (py < neck_l.y) { neck_l = {x: px, y: py}; idx_nl = i; }
+                        } else if (px > dynamic_cx + margin && px < armpit_r.x) {
+                            if (py < neck_r.y) { neck_r = {x: px, y: py}; idx_nr = i; }
+                        }
+                    }
+                }
+
+                let chest_left = armpit_l, chest_right = armpit_r;
+                function isSolid(px, py) {
+                    let ix = Math.floor(px), iy = Math.floor(py);
+                    if(ix>=0 && ix<src.cols && iy>=0 && iy<src.rows) return warpedShirtMask.ucharPtr(iy)[ix] > 0;
+                    return false;
+                }
+
+                let neck_mid_x = (neck_l.x + neck_r.x) / 2;
+                let neck_mid_y = (neck_l.y + neck_r.y) / 2;
+
+                let back_collar_y = rect.y;
+                for(let y = rect.y; y < rect.y + rect.height * 0.5; y++) {
+                    if (isSolid(neck_mid_x, y)) { back_collar_y = y; break; }
+                }
+
+                let neck_center_top = {x: neck_mid_x, y: neck_mid_y}; 
+                let neck_center_drop = {x: neck_mid_x, y: back_collar_y};
+                
+                let scanRange = Math.floor(rect.width * 0.05); 
+                let bottomYs = [];
+                for (let x = dynamic_cx - scanRange; x <= dynamic_cx + scanRange; x++) {
+                    for (let y = rect.y + Math.floor(rect.height) - 1; y > armpit_l.y; y--) {
+                        if (isSolid(x, y)) { bottomYs.push(y); break; }
+                    }
+                }
+
+                let avgBottomY = bottomYs.length > 0 ? Math.floor(bottomYs.reduce((a, b) => a + b) / bottomYs.length) : rect.y + rect.height;
+                let hem_center_point = {x: dynamic_cx, y: avgBottomY};
+
+                let cRed = new cv.Scalar(255, 0, 0, 255), cYellow = new cv.Scalar(255, 255, 0, 255); 
+                let cBlue = new cv.Scalar(0, 0, 255, 255), cGreen = new cv.Scalar(0, 255, 0, 255);    
+                let cOrange = new cv.Scalar(255, 120, 0, 255); 
+
+                let ptsToDraw = new cv.MatVector(); ptsToDraw.push_back(tshirt_cnt);
+                cv.drawContours(src, ptsToDraw, 0, new cv.Scalar(0, 255, 0, 255), 2);
+                ptsToDraw.delete();
+
+                cv.line(src, new cv.Point(neck_l.x, neck_l.y), new cv.Point(neck_r.x, neck_r.y), cRed, 5); 
+                cv.line(src, new cv.Point(neck_center_top.x, neck_center_top.y), new cv.Point(neck_center_drop.x, neck_center_drop.y), cYellow, 5); 
+                cv.line(src, new cv.Point(neck_center_drop.x, neck_center_drop.y), new cv.Point(hem_center_point.x, hem_center_point.y), cBlue, 5); 
+                cv.line(src, new cv.Point(chest_left.x, chest_left.y), new cv.Point(chest_right.x, chest_right.y), cGreen, 5); 
+                cv.line(src, new cv.Point(sl_top.x, sl_top.y), new cv.Point(sl_bot.x, sl_bot.y), cOrange, 5); 
+                cv.line(src, new cv.Point(sr_top.x, sr_top.y), new cv.Point(sr_bot.x, sr_bot.y), cOrange, 5); 
+
+                let dotColor = new cv.Scalar(0, 165, 255, 255);
+                let keyPoints = [neck_l, neck_r, chest_left, chest_right, sl_top, sl_bot, sr_top, sr_bot, neck_center_top, neck_center_drop, hem_center_point];
+                for(let pt of keyPoints) { cv.circle(src, new cv.Point(pt.x, pt.y), 7, dotColor, -1); }
+
+                let length_cm = calcDist(neck_center_drop, hem_center_point) / ppcm;
+                let chest_cm = calcDist(chest_left, chest_right) / ppcm;
+                let sle_wid_cm = (calcDist(sl_top, sl_bot) + calcDist(sr_top, sr_bot)) / 2 / ppcm; 
+                let neck_cm = calcDist(neck_l, neck_r) / ppcm; 
+
+                document.getElementById('resultText').innerHTML = `
+                    <div class="result-item"><span><span style="color:blue;font-weight:bold;">|</span> 총장 (수직)</span> <strong>${length_cm.toFixed(1)} cm</strong></div>
+                    <div class="result-item"><span><span style="color:green;font-weight:bold;">ㅡ</span> 가슴단면</span> <strong>${chest_cm.toFixed(1)} cm</strong></div>
+                    <div class="result-item"><span><span style="color:orange;font-weight:bold;">/</span> 소매끝단면</span> <strong>${sle_wid_cm.toFixed(1)} cm</strong></div>
+                    <div class="result-item"><span><span style="color:red;font-weight:bold;">ㅡ</span> 넥라인 너비</span> <strong>${neck_cm.toFixed(1)} cm</strong></div>
+                    
+                    <div style="font-size:13px; color:#ffdd57; text-align:center; padding-top:15px; line-height:1.5;">
+                        ✨ <b>Alpha 채널 정밀 추출 성공!</b> ✨
+                    </div>
+                `;
+
+                cv.imshow('interactionCanvas', src);
+
+                loader.style.display = "none";
+                resultBox.style.display = "block";
+                instruction.style.display = "inline-block";
+                instruction.innerText = "🎉 측정이 완료되었습니다!";
+                resetBoxBtn.style.display = "inline-block";
+                resetBoxBtn.innerText = "새로 측정하기";
+
+                originalSrc.delete(); src.delete(); a4Mat.delete(); a4Alpha.delete(); rgbaPlanesA4.delete();
+                contoursA4.delete(); hierarchyA4.delete(); approx.delete();
+                dstTri.delete(); srcTri.delete(); M.delete(); shirtMat.delete(); shirtAlpha.delete(); rgbaPlanesShirt.delete();
+                fullShirtMask.delete(); warpedShirtMask.delete(); contoursShirt.delete(); hierarchyShirt.delete();
+                tshirt_cnt.delete(); hull.delete(); hullIndices.delete(); defects.delete();
+                T.delete(); M_new.delete();
+
+            } catch (err) {
+                console.error(err);
+                loader.style.display = "none";
+                
+                let errorMsg = "알 수 없는 오류가 발생했습니다.";
+                if (err.message === "A4_NOT_FOUND" || err.message === "A4_TOO_SMALL") errorMsg = "A4 용지를 찾을 수 없거나 지정한 영역이 너무 작습니다.";
+                if (err.message === "A4_NOT_QUAD") errorMsg = "A4 용지의 4개 꼭짓점을 찾을 수 없습니다. (모서리가 가려졌는지 확인하세요)";
+                if (err.message === "SHIRT_NOT_FOUND") errorMsg = "의류 실루엣을 찾을 수 없습니다.";
+                if (err.message === "WARP_TOO_LARGE") errorMsg = "A4 용지의 형태가 심하게 왜곡 인식되었습니다. 상자를 A4 용지에만 딱 맞게 다시 그려주세요.";
+
+                alert(`🚨 누끼 추출 및 치수 분석 실패!\n\n원인: ${errorMsg}\n\n박스 영역을 다시 지정하거나 사진을 다시 촬영해주세요.`);
+                
+                instruction.style.display = "inline-block";
+                resetBoxBtn.style.display = "inline-block";
+                redrawCanvas();
+            }
+        });
+    </script>
+</body>
+</html>

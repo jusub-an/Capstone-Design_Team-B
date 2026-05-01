@@ -143,6 +143,51 @@ async def measure_body(
         "gray_mask_base64":        _encode(result["gray_mask"]),
     }
 
+# --- 의류 치수 측정 엔드포인트 ---
+from clothing_measure_engine import ClothingMeasureEngine
+
+_clothing_measure_engine = None
+
+def get_clothing_measure_engine():
+    global _clothing_measure_engine
+    if _clothing_measure_engine is None:
+        _clothing_measure_engine = ClothingMeasureEngine()
+    return _clothing_measure_engine
+
+@app.post("/api/measure/clothing")
+async def measure_clothing(
+    shirt_image: UploadFile = File(...),
+    a4_image: UploadFile = File(...),
+    shirt_x: float = Form(...),
+    shirt_y: float = Form(...),
+    shirt_w: float = Form(...),
+    shirt_h: float = Form(...),
+    a4_x: float = Form(...),
+    a4_y: float = Form(...),
+    a4_w: float = Form(...),
+    a4_h: float = Form(...),
+    orig_w: float = Form(...),
+    orig_h: float = Form(...),
+):
+    shirt_bytes = await shirt_image.read()
+    a4_bytes = await a4_image.read()
+
+    shirt_rect = {'x': shirt_x, 'y': shirt_y, 'w': shirt_w, 'h': shirt_h}
+    a4_rect = {'x': a4_x, 'y': a4_y, 'w': a4_w, 'h': a4_h}
+
+    try:
+        engine = get_clothing_measure_engine()
+        result = await run_in_threadpool(
+            engine.process, 
+            shirt_bytes, a4_bytes, 
+            shirt_rect, a4_rect, 
+            orig_w, orig_h
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"분석 중 오류 발생: {str(e)}")
 
 
 # --- 상품 및 통계 관리 ---
