@@ -8,8 +8,8 @@ DB_USER = "C##CAPSTON"
 DB_PASSWORD = "1q2w3e"
 DB_HOST = "localhost"
 DB_PORT = "1521"
-# Mac os는 "FREEPDB1" 입력, windows는 "XE" 입력 19C 버전이면 orcl로 설정
-DB_SERVICE_NAME = "orcl"
+# Mac os는 "FREEPDB1" 입력, windows는 "XE" 입력
+DB_SERVICE_NAME = "XE"
 
 # 비밀번호 URL 인코딩
 encoded_password = quote_plus(DB_PASSWORD) 

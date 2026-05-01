@@ -116,7 +116,7 @@ function ProductDetail() {
               <div className="dropdown-menu">
                 <ul>
                   <li onClick={() => navigate('/mypage')}>마이페이지</li>
-                  <li onClick={() => alert('Coming soon')}>내 아바타</li>
+                  <li onClick={() => navigate('/mypage/body-measure')}>내 아바타</li>
                   <li onClick={handleLogout} className="logout-action">로그아웃</li>
                 </ul>
               </div>

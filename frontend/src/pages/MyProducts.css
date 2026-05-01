@@ -1,14 +1,23 @@
 .my-products-container {
   max-width: 1000px;
-  margin: 0 auto;
-  padding: 40px 20px;
+  margin: 40px auto;
+  padding: 0 20px;
 }
 
 .my-products-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
   margin-bottom: 40px;
+}
+
+.my-products-header h1 {
+  font-size: 2rem;
+  font-weight: 800;
+  color: #1e293b;
+  margin-bottom: 8px;
+}
+
+.my-products-header p {
+  color: #64748b;
+  font-size: 1.1rem;
 }
 
 .back-btn {

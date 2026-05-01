@@ -1,3 +1,26 @@
+/* wishlist.jsx */
+.wishlist-container {
+  max-width: 1000px;
+  margin: 40px auto;
+  padding: 0 20px;
+}
+
+.wishlist-header {
+  margin-bottom: 0px;
+}
+
+.wishlist-header h1 {
+  font-size: 2rem;
+  font-weight: 800;
+  color: #1e293b;
+  margin-bottom: 8px;
+}
+
+.wishlist-header p {
+  color: #64748b;
+  font-size: 1.1rem;
+}
+
 /* ProductList.css */
 .product-list-container {
   width: 100%;

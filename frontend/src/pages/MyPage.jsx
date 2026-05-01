@@ -16,7 +16,7 @@ function MyPage() {
   };
 
   const menuItems = [
-    { title: '내 상품 관리', icon: <Package size={20} />, path: '/mypage/products', description: '등록한 상품을 확인합니다.' },
+    { title: '상품 관리', icon: <Package size={20} />, path: '/mypage/products', description: '등록한 상품을 확인합니다.' },
     { title: '찜한 상품 목록', icon: <Heart size={20} />, path: '/mypage/wishes', description: '찜한 상품들을 확인합니다.' },
     { title: '아바타 관리', icon: <User size={20} />, path: '/mypage/body-measure', description: '나의 아바타 정보를 확인합니다.' },
     { title: '리뷰 관리', icon: <MessageSquareMore size={20} />, path: '/mypage/reviews', description: '작성한 리뷰 목록을 확인합니다.' }
