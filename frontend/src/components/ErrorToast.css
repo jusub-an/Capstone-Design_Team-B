@@ -1,0 +1,133 @@
+/* === ErrorToast Modal-Toast === */
+.et-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2000;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 40px;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(2px);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.et-overlay.et-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.et-overlay.et-exiting {
+  opacity: 0;
+}
+
+.et-toast {
+  background: #ffffff;
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18),
+              0 0 0 1px rgba(0, 0, 0, 0.04);
+  padding: 24px;
+  max-width: 440px;
+  width: 92%;
+  position: relative;
+  overflow: hidden;
+  animation: et-slideDown 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.et-exiting .et-toast {
+  animation: et-slideUp 0.35s cubic-bezier(0.55, 0.06, 0.68, 0.19) forwards;
+}
+
+@keyframes et-slideDown {
+  from { opacity: 0; transform: translateY(-30px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes et-slideUp {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to   { opacity: 0; transform: translateY(-20px) scale(0.96); }
+}
+
+.et-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.et-icon {
+  font-size: 1.5rem;
+}
+
+.et-title {
+  flex: 1;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.et-close {
+  background: none;
+  border: none;
+  font-size: 1.1rem;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.et-close:hover {
+  color: #475569;
+  background: #f1f5f9;
+}
+
+.et-detail {
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: #64748b;
+  margin-bottom: 18px;
+  padding-left: 2px;
+}
+
+.et-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.et-btn {
+  padding: 8px 22px;
+  border: none;
+  border-radius: 8px;
+  background: #6366f1;
+  color: #ffffff;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.15s ease;
+}
+
+.et-btn:hover {
+  background: #4f46e5;
+  transform: translateY(-1px);
+}
+
+.et-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #6366f1, #a78bfa);
+  animation: et-timer 8s linear forwards;
+  border-radius: 0 0 14px 14px;
+}
+
+@keyframes et-timer {
+  from { width: 100%; }
+  to   { width: 0%; }
+}

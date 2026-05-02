@@ -1,0 +1,145 @@
+/* === MeasurementGuide — 사이드 패널 (모달 2-column 왼쪽) === */
+.mg-panel {
+  width: 0;
+  min-width: 0;
+  overflow: hidden;
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+              min-width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  border-right: 0px solid transparent;
+  flex-shrink: 0;
+}
+
+.mg-panel-open {
+  width: 280px;
+  min-width: 280px;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.mg-panel-inner {
+  width: 280px;
+  padding: 24px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.mg-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.mg-panel-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+
+.mg-panel-close {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #94a3b8;
+  font-size: 0.85rem;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.mg-panel-close:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* 섹션 */
+.mg-section {
+  margin-bottom: 2px;
+}
+
+.mg-section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #94a3b8;
+  margin-bottom: 8px;
+}
+
+.mg-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.mg-badge-common { background: rgba(99, 102, 241, 0.2); color: #a5b4fc; }
+.mg-badge-top    { background: rgba(59, 130, 246, 0.2); color: #93c5fd; }
+.mg-badge-bottom { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+
+/* 팁 리스트 */
+.mg-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.mg-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: background 0.2s;
+}
+
+.mg-item:hover { background: rgba(255, 255, 255, 0.07); }
+
+.mg-item-icon { font-size: 0.95rem; flex-shrink: 0; margin-top: 1px; }
+
+.mg-item-text {
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: #cbd5e1;
+}
+
+/* 경고 */
+.mg-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 10px;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.18);
+  border-radius: 8px;
+}
+
+.mg-warn-icon { font-size: 0.9rem; flex-shrink: 0; margin-top: 1px; }
+
+.mg-warn-text {
+  font-size: 0.76rem;
+  line-height: 1.4;
+  color: #fca5a5;
+}
+
+/* 모바일 */
+@media (max-width: 768px) {
+  .mg-panel-open { width: 240px; min-width: 240px; }
+  .mg-panel-inner { width: 240px; padding: 18px 14px; }
+}

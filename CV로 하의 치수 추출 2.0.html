@@ -458,7 +458,11 @@
                 let shirtAlpha = rgbaPlanesShirt.get(3); 
                 cv.threshold(shirtAlpha, shirtAlpha, 10, 255, cv.THRESH_BINARY);
 
-                let roi = fullShirtMask.roi(new cv.Rect(rectShirt.x, rectShirt.y, rectShirt.w, rectShirt.h));
+                let rx = Math.max(0, rectShirt.x);
+                let ry = Math.max(0, rectShirt.y);
+                let rw = Math.min(originalSrc.cols - rx, rectShirt.w);
+                let rh = Math.min(originalSrc.rows - ry, rectShirt.h);
+                let roi = fullShirtMask.roi(new cv.Rect(rx, ry, rw, rh));
                 shirtAlpha.copyTo(roi);
 
                 logMsg("👖 텐서 기하학 왜곡 보정 적용 중...");
@@ -482,6 +486,8 @@
                 let mid_x = rect.x + rect.width / 2;
 
                 logMsg("👖 바지 주요 특징점(사타구니, 허리, 밑단) 추출 중...");
+                
+                // 1. 사타구니 (볼록 결함 유지)
                 let hullIndices = new cv.Mat(), defects = new cv.Mat();
                 cv.convexHull(tshirt_cnt, hullIndices, false, false);
                 cv.convexityDefects(tshirt_cnt, hullIndices, defects);
@@ -503,61 +509,90 @@
                         }
                     }
                 }
-
                 if (!crotch_pt) { crotch_pt = {x: mid_x, y: rect.y + rect.height * 0.4}; }
 
-                let pts = [];
+                // 변수명 중복 에러 해결 (pts -> pants_pts)
+                let pants_pts = [];
                 for (let i = 0; i < tshirt_cnt.rows; i++) {
-                    pts.push({x: tshirt_cnt.data32S[i*2], y: tshirt_cnt.data32S[i*2+1]});
+                    pants_pts.push({x: tshirt_cnt.data32S[i*2], y: tshirt_cnt.data32S[i*2+1]});
                 }
 
-                // 1. Waist
-                let upper_pts = pts.filter(p => p.y < rect.y + rect.height * 0.3);
-                if (upper_pts.length === 0) upper_pts = pts;
+                // 2. 허리 양끝점 (Waist L/R)
+                let upper_pts = pants_pts.filter(p => p.y < rect.y + rect.height * 0.3);
+                if (upper_pts.length === 0) upper_pts = pants_pts;
 
-                let waist_l = upper_pts.reduce((min, p) => (p.x + p.y*2 < min.x + min.y*2 ? p : min), upper_pts[0]);
-                let waist_r = upper_pts.reduce((max, p) => (p.x - p.y*2 > max.x - max.y*2 ? p : max), upper_pts[0]);
-                let waist_center_y = (waist_l.y + waist_r.y) / 2;
-                let waist_mid = {x: (waist_l.x + waist_r.x)/2, y: waist_center_y};
+                // 최상단 좌/우측 꼭짓점 찾기
+                let waist_l = upper_pts.reduce((min, p) => (p.x + p.y < min.x + min.y ? p : min), upper_pts[0]);
+                let waist_r = upper_pts.reduce((max, p) => (p.x - p.y > max.x - max.y ? p : max), upper_pts[0]);
 
-                // 3. Hem
-                let bottom_pts = pts.filter(p => p.y > rect.y + rect.height * 0.5);
-                if (bottom_pts.length === 0) bottom_pts = pts;
+                // 3. 밑단 (Hem) - 왼쪽 다리(Left Leg) 기준 수학적 모서리 스냅
+                let left_leg_pts = pants_pts.filter(p => p.x < crotch_pt.x && p.y > crotch_pt.y);
+                if (left_leg_pts.length === 0) left_leg_pts = pants_pts;
+                
+                // y-x 가 가장 크면 왼쪽 아래, y+x 가 가장 크면 오른쪽 아래
+                let hem_l_left = left_leg_pts.reduce((max, p) => (p.y - p.x > max.y - max.x ? p : max), left_leg_pts[0]);
+                let hem_l_right = left_leg_pts.reduce((max, p) => (p.y + p.x > max.y + max.x ? p : max), left_leg_pts[0]);
 
-                let left_half = bottom_pts.filter(p => p.x < mid_x);
-                let right_half = bottom_pts.filter(p => p.x >= mid_x);
-                if (left_half.length === 0) left_half = bottom_pts;
-                if (right_half.length === 0) right_half = bottom_pts;
-
-                let ll_max_y = left_half.reduce((max, p) => (p.y > max ? p.y : max), left_half[0].y);
-                let ll_hem_pts = left_half.filter(p => p.y > ll_max_y - rect.height * 0.1);
-                let hem_l_left = ll_hem_pts.reduce((min, p) => p.x < min.x ? p : min, ll_hem_pts[0]);
-                let hem_l_right = ll_hem_pts.reduce((max, p) => p.x > max.x ? p : max, ll_hem_pts[0]);
-
-                let rl_max_y = right_half.reduce((max, p) => (p.y > max ? p.y : max), right_half[0].y);
-                let rl_hem_pts = right_half.filter(p => p.y > rl_max_y - rect.height * 0.1);
-                let hem_r_left = rl_hem_pts.reduce((min, p) => p.x < min.x ? p : min, rl_hem_pts[0]);
-                let hem_r_right = rl_hem_pts.reduce((max, p) => p.x > max.x ? p : max, rl_hem_pts[0]);
-
-                // 2. Thigh
-                let thigh_l_left = projectPointToLine(crotch_pt, waist_l, hem_l_left);
+                // 4. 허벅지 (Thigh) - 사타구니에서 수직 투영 후 '실제 실루엣'에 스냅 (준섭님 피드백 완벽 반영)
+                let proj_thigh = projectPointToLine(crotch_pt, waist_l, hem_l_left); // 가상의 수직점
+                let left_outline = pants_pts.filter(p => p.x < crotch_pt.x); // 바지 왼쪽 테두리 점들만 모음
+                
+                // 가상의 수직점에서 가장 가까운 '진짜 바지 테두리 픽셀'을 찾아 자석처럼 붙임
+                let thigh_l_left = left_outline.reduce((closest, p) => 
+                    calcDist(p, proj_thigh) < calcDist(closest, proj_thigh) ? p : closest, left_outline[0]
+                );
                 let thigh_l_right = crotch_pt;
 
-                // 4. Measurements
-                let len_l = calcDist(waist_l, hem_l_left);
-                let len_r = calcDist(waist_r, hem_r_right);
-                let length_cm = Math.max(len_l, len_r) / ppcm;
-                let leg_line_start = len_l > len_r ? waist_l : waist_r;
-                let leg_line_end = len_l > len_r ? hem_l_left : hem_r_right;
+                // 5. 허리 실루엣(곡선) 경로 추출
+                let idx_wl = -1, idx_wr = -1;
+                for (let i = 0; i < tshirt_cnt.rows; i++) {
+                    if (tshirt_cnt.data32S[i*2] === waist_l.x && tshirt_cnt.data32S[i*2+1] === waist_l.y) idx_wl = i;
+                    if (tshirt_cnt.data32S[i*2] === waist_r.x && tshirt_cnt.data32S[i*2+1] === waist_r.y) idx_wr = i;
+                }
 
-                let waist_cm = calcDist(waist_l, waist_r) / ppcm;
-                let rise_cm = (crotch_pt.y - waist_center_y) / ppcm;
-                let hem_cm = (calcDist(hem_l_left, hem_l_right) + calcDist(hem_r_left, hem_r_right)) / 2 / ppcm;
+                let path1 = [], path2 = [];
+                let n = tshirt_cnt.rows;
+                let curr = idx_wl;
+                while(curr !== idx_wr) { path1.push({x: tshirt_cnt.data32S[curr*2], y: tshirt_cnt.data32S[curr*2+1]}); curr = (curr + 1) % n; }
+                path1.push(waist_r);
+
+                curr = idx_wl;
+                while(curr !== idx_wr) { path2.push({x: tshirt_cnt.data32S[curr*2], y: tshirt_cnt.data32S[curr*2+1]}); curr = (curr - 1 + n) % n; }
+                path2.push(waist_r);
+
+                let avgY1 = path1.reduce((s, p) => s + p.y, 0) / path1.length;
+                let avgY2 = path2.reduce((s, p) => s + p.y, 0) / path2.length;
+                let top_waist_path = avgY1 < avgY2 ? path1 : path2;
+
+                // 허리 곡선 길이 계산 및 각 픽셀까지의 누적 거리 저장
+                let waist_curve_len = 0;
+                let cumulative_distances = [0]; 
+                for(let i = 0; i < top_waist_path.length - 1; i++) {
+                    let d = calcDist(top_waist_path[i], top_waist_path[i+1]);
+                    waist_curve_len += d;
+                    cumulative_distances.push(waist_curve_len);
+                }
+                
+                // 💡 곡선의 길이를 쫙 폈을 때 정확히 50%가 되는 정중앙 픽셀 찾기
+                let half_len = waist_curve_len / 2;
+                let waist_center_top = top_waist_path[0];
+                for(let i = 0; i < cumulative_distances.length; i++) {
+                    if(cumulative_distances[i] >= half_len) {
+                        waist_center_top = top_waist_path[i];
+                        break;
+                    }
+                }
+
+                // 6. 최종 치수 계산 (준섭님 공식 적용)
+                // 총장: 왼쪽 허리끝 ~ 왼쪽 밑단끝 
+                let length_cm = calcDist(waist_l, hem_l_left) / ppcm;
+                let waist_cm = waist_curve_len / ppcm;
+                let rise_cm = calcDist(waist_center_top, crotch_pt) / ppcm;
+                let hem_cm = calcDist(hem_l_left, hem_l_right) / ppcm;
                 let thigh_cm = calcDist(thigh_l_left, thigh_l_right) / ppcm;
 
                 logMsg("👖 시각화 이미지 생성 중...");
                 let cWhite = new cv.Scalar(255, 255, 255, 255);
-                let cCyan = new cv.Scalar(0, 255, 255, 255); 
                 let cMagenta = new cv.Scalar(255, 0, 255, 255); 
                 let cBlue = new cv.Scalar(255, 100, 100, 255);
                 let cGreen = new cv.Scalar(100, 255, 100, 255);
@@ -569,14 +604,7 @@
                 cv.drawContours(src, ptsToDraw, 0, cWhite, 2);
                 ptsToDraw.delete();
 
-                // Draw Hull
-                let hullMat = new cv.Mat();
-                cv.convexHull(tshirt_cnt, hullMat, false, true);
-                let hullVector = new cv.MatVector(); hullVector.push_back(hullMat);
-                cv.drawContours(src, hullVector, 0, cCyan, 2);
-                hullMat.delete(); hullVector.delete();
-
-                // Draw Defects
+                // 사타구니 볼록 결함 시각화 유지
                 for (let i = 0; i < defects.rows; ++i) {
                     let farthestIdx = defects.data32S[i * 4 + 2];
                     let depth = defects.data32S[i * 4 + 3] / 256.0;
@@ -586,24 +614,32 @@
                     }
                 }
 
-                cv.line(src, new cv.Point(waist_l.x, waist_l.y), new cv.Point(waist_r.x, waist_r.y), cBlue, 3);
-                cv.line(src, new cv.Point(waist_mid.x, waist_mid.y), new cv.Point(crotch_pt.x, crotch_pt.y), cGreen, 3);
-                cv.line(src, new cv.Point(hem_l_left.x, hem_l_left.y), new cv.Point(hem_l_right.x, hem_l_right.y), cRed, 3);
-                cv.line(src, new cv.Point(thigh_l_left.x, thigh_l_left.y), new cv.Point(thigh_l_right.x, thigh_l_right.y), cYellow, 3);
-                cv.line(src, new cv.Point(leg_line_start.x, leg_line_start.y), new cv.Point(leg_line_end.x, leg_line_end.y), cGray, 3);
+                // 📌 선 그리기
+                // 1) 허리 단면 (실루엣 곡선을 따라 파란색 선 그리기)
+                for (let i = 0; i < top_waist_path.length - 1; i++) {
+                    cv.line(src, new cv.Point(top_waist_path[i].x, top_waist_path[i].y), new cv.Point(top_waist_path[i+1].x, top_waist_path[i+1].y), cBlue, 3);
+                }
+                
+                // 2) 나머지 직선들
+                cv.line(src, new cv.Point(waist_center_top.x, waist_center_top.y), new cv.Point(crotch_pt.x, crotch_pt.y), cGreen, 3); // 밑위
+                cv.line(src, new cv.Point(hem_l_left.x, hem_l_left.y), new cv.Point(hem_l_right.x, hem_l_right.y), cRed, 3); // 밑단
+                cv.line(src, new cv.Point(thigh_l_left.x, thigh_l_left.y), new cv.Point(thigh_l_right.x, thigh_l_right.y), cYellow, 3); // 허벅지
+                cv.line(src, new cv.Point(waist_l.x, waist_l.y), new cv.Point(hem_l_left.x, hem_l_left.y), cGray, 3); // 총장 (제일 왼쪽 선)
 
+                // 📌 주요 점 찍기
                 let dotColor = new cv.Scalar(0, 165, 255, 255);
-                let keyPoints = [waist_l, waist_r, crotch_pt, hem_l_left, hem_l_right, thigh_l_left, thigh_l_right];
+                let keyPoints = [waist_l, waist_r, waist_center_top, crotch_pt, hem_l_left, hem_l_right, thigh_l_left, thigh_l_right];
                 for(let pt of keyPoints) { cv.circle(src, new cv.Point(pt.x, pt.y), 7, dotColor, -1); }
 
-                cv.putText(src, `Waist ${waist_cm.toFixed(1)}cm`, new cv.Point((waist_l.x+waist_r.x)/2, waist_l.y-20), cv.FONT_HERSHEY_SIMPLEX, 0.7, cBlue, 2);
-                cv.putText(src, `Rise ${rise_cm.toFixed(1)}cm`, new cv.Point(waist_mid.x+10, (waist_mid.y+crotch_pt.y)/2), cv.FONT_HERSHEY_SIMPLEX, 0.7, cGreen, 2);
-                cv.putText(src, `Hem ${hem_cm.toFixed(1)}cm`, new cv.Point((hem_l_left.x+hem_l_right.x)/2, hem_l_left.y-20), cv.FONT_HERSHEY_SIMPLEX, 0.7, cRed, 2);
-                cv.putText(src, `Thigh ${thigh_cm.toFixed(1)}cm`, new cv.Point((thigh_l_left.x+thigh_l_right.x)/2, thigh_l_left.y-20), cv.FONT_HERSHEY_SIMPLEX, 0.7, cYellow, 2);
-                cv.putText(src, `Length ${length_cm.toFixed(1)}cm`, new cv.Point((leg_line_start.x+leg_line_end.x)/2 + 20, (leg_line_start.y+leg_line_end.y)/2), cv.FONT_HERSHEY_SIMPLEX, 0.7, cGray, 2);
+                // 📌 텍스트 라벨 달기
+                cv.putText(src, `Waist ${waist_cm.toFixed(1)}cm`, new cv.Point(waist_center_top.x - 50, waist_center_top.y - 20), cv.FONT_HERSHEY_SIMPLEX, 0.7, cBlue, 2);
+                cv.putText(src, `Rise ${rise_cm.toFixed(1)}cm`, new cv.Point(waist_center_top.x + 10, (waist_center_top.y + crotch_pt.y) / 2), cv.FONT_HERSHEY_SIMPLEX, 0.7, cGreen, 2);
+                cv.putText(src, `Hem ${hem_cm.toFixed(1)}cm`, new cv.Point((hem_l_left.x + hem_l_right.x) / 2, hem_l_left.y - 20), cv.FONT_HERSHEY_SIMPLEX, 0.7, cRed, 2);
+                cv.putText(src, `Thigh ${thigh_cm.toFixed(1)}cm`, new cv.Point((thigh_l_left.x + thigh_l_right.x) / 2, thigh_l_left.y - 20), cv.FONT_HERSHEY_SIMPLEX, 0.7, cYellow, 2);
+                cv.putText(src, `Length ${length_cm.toFixed(1)}cm`, new cv.Point(waist_l.x + 10, (waist_l.y + hem_l_left.y) / 2), cv.FONT_HERSHEY_SIMPLEX, 0.7, cGray, 2);
 
                 document.getElementById('resultText').innerHTML = `
-                    <div class="result-item"><span><span style="color:blue;font-weight:bold;">ㅡ</span> 허리 단면</span> <strong>${waist_cm.toFixed(1)} cm</strong></div>
+                    <div class="result-item"><span><span style="color:blue;font-weight:bold;">ㅡ</span> 허리 단면 (실루엣 기준)</span> <strong>${waist_cm.toFixed(1)} cm</strong></div>
                     <div class="result-item"><span><span style="color:green;font-weight:bold;">|</span> 밑위</span> <strong>${rise_cm.toFixed(1)} cm</strong></div>
                     <div class="result-item"><span><span style="color:yellow;font-weight:bold;">ㅡ</span> 허벅지 단면</span> <strong>${thigh_cm.toFixed(1)} cm</strong></div>
                     <div class="result-item"><span><span style="color:red;font-weight:bold;">ㅡ</span> 밑단 단면</span> <strong>${hem_cm.toFixed(1)} cm</strong></div>
@@ -627,7 +663,8 @@
                 contoursA4.delete(); hierarchyA4.delete(); approx.delete();
                 dstTri.delete(); srcTri.delete(); M.delete(); shirtMat.delete(); shirtAlpha.delete(); rgbaPlanesShirt.delete();
                 fullShirtMask.delete(); warpedShirtMask.delete(); contoursShirt.delete(); hierarchyShirt.delete();
-                tshirt_cnt.delete(); hull.delete(); hullIndices.delete(); defects.delete();
+                
+                tshirt_cnt.delete(); hullIndices.delete(); defects.delete();
                 T.delete(); M_new.delete();
 
             } catch (err) {
@@ -640,8 +677,7 @@
                 if (err.message === "SHIRT_NOT_FOUND") errorMsg = "의류 실루엣을 찾을 수 없습니다.";
                 if (err.message === "WARP_TOO_LARGE") errorMsg = "A4 용지의 형태가 심하게 왜곡 인식되었습니다. 상자를 A4 용지에만 딱 맞게 다시 그려주세요.";
 
-                alert(`🚨 누끼 추출 및 치수 분석 실패!\n\n원인: ${errorMsg}\n\n박스 영역을 다시 지정하거나 사진을 다시 촬영해주세요.`);
-                
+                alert(`🚨 누끼 추출 및 치수 분석 실패!\n\n원인: ${errorMsg}\n\n[엔진 상세 에러]: ${err.message || err}\n\n박스 영역을 다시 지정하거나 사진을 다시 촬영해주세요.`);                
                 instruction.style.display = "inline-block";
                 resetBoxBtn.style.display = "inline-block";
                 redrawCanvas();

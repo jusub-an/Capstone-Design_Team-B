@@ -1,0 +1,83 @@
+/* === MeasurementWarning Box (Dark Mode - CV Modal 내부) === */
+.mw-container {
+  margin-top: 16px;
+  padding: 16px 18px;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-left: 4px solid #f59e0b;
+  border-radius: 10px;
+  animation: mw-fadeIn 0.4s ease;
+  width: 100%;
+}
+
+@keyframes mw-fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.mw-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.mw-icon {
+  font-size: 1.25rem;
+}
+
+.mw-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #fbbf24;
+}
+
+.mw-desc {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: #fde68a;
+  margin-bottom: 10px;
+}
+
+.mw-link {
+  background: none;
+  border: none;
+  color: #60a5fa;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: inherit;
+  padding: 0;
+}
+
+.mw-link:hover {
+  color: #93c5fd;
+}
+
+.mw-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.mw-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: #fde68a;
+  padding: 5px 8px;
+  background: rgba(245, 158, 11, 0.08);
+  border-radius: 6px;
+}
+
+.mw-bullet {
+  color: #f59e0b;
+  font-weight: bold;
+  flex-shrink: 0;
+  margin-top: 1px;
+}

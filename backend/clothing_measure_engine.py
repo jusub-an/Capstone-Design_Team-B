@@ -397,66 +397,88 @@ class ClothingMeasureEngine:
         if crotch_pt is None:
             crotch_pt = (mid_x, y + h * 0.4)
             
-        pts = [tuple(pt[0]) for pt in tshirt_cnt]
+        pants_pts = [tuple(pt[0]) for pt in tshirt_cnt]
         
-        # 1. Waist (Top corners by projecting diagonally)
-        upper_pts = [p for p in pts if p[1] < y + h * 0.3]
-        if not upper_pts: upper_pts = pts
-        waist_l = min(upper_pts, key=lambda p: p[0] + p[1]*2)
-        waist_r = max(upper_pts, key=lambda p: p[0] - p[1]*2)
-        waist_center_y = (waist_l[1] + waist_r[1]) / 2
-        waist_mid = ((waist_l[0]+waist_r[0])/2, waist_center_y)
-            
-        # 3. Hem (Bottom lines for each leg, robustly finding true bounding points without altering Y)
-        bottom_pts = [p for p in pts if p[1] > y + h * 0.5]
-        if not bottom_pts: bottom_pts = pts
+        # 2. 허리 양끝점 (Waist L/R)
+        upper_pts = [p for p in pants_pts if p[1] < y + h * 0.3]
+        if not upper_pts: upper_pts = pants_pts
         
-        # Split left and right legs based on horizontal midpoint
-        left_half = [p for p in bottom_pts if p[0] < mid_x]
-        right_half = [p for p in bottom_pts if p[0] >= mid_x]
+        # 최상단 좌/우측 꼭짓점 찾기
+        waist_l = min(upper_pts, key=lambda p: p[0] + p[1])
+        waist_r = max(upper_pts, key=lambda p: p[0] - p[1])
         
-        if not left_half: left_half = bottom_pts
-        if not right_half: right_half = bottom_pts
+        # 3. 밑단 (Hem) - 왼쪽 다리(Left Leg) 기준 수학적 모서리 스냅
+        left_leg_pts = [p for p in pants_pts if p[0] < crotch_pt[0] and p[1] > crotch_pt[1]]
+        if not left_leg_pts: left_leg_pts = pants_pts
         
-        # Find the absolute bottom to establish a search zone
-        ll_max_y = max(left_half, key=lambda p: p[1])[1]
-        # Get points within the bottom 5% of the left leg
-        ll_hem_pts = [p for p in left_half if p[1] > ll_max_y - h * 0.05]
-        # Keep their original Y coordinates! Just find min/max X.
-        hem_l_left = min(ll_hem_pts, key=lambda p: p[0])
-        hem_l_right = max(ll_hem_pts, key=lambda p: p[0])
-
-        rl_max_y = max(right_half, key=lambda p: p[1])[1]
-        rl_hem_pts = [p for p in right_half if p[1] > rl_max_y - h * 0.05]
-        hem_r_left = min(rl_hem_pts, key=lambda p: p[0])
-        hem_r_right = max(rl_hem_pts, key=lambda p: p[0])
+        # y-x 가 가장 크면 왼쪽 아래, y+x 가 가장 크면 오른쪽 아래
+        hem_l_left = max(left_leg_pts, key=lambda p: p[1] - p[0])
+        hem_l_right = max(left_leg_pts, key=lambda p: p[1] + p[0])
         
-        # 2. Thigh (Perpendicular to left leg outseam)
+        # 4. 허벅지 (Thigh) - 사타구니에서 수직 투영 후 '실제 실루엣'에 스냅
         def project_point_to_line(p, a, b):
             ap = np.array([p[0]-a[0], p[1]-a[1]])
             ab = np.array([b[0]-a[0], b[1]-a[1]])
             dot_ab = np.dot(ab, ab)
             if dot_ab == 0: return a
             t = np.dot(ap, ab) / dot_ab
-            # Do not clamp to segment so we can project exactly horizontal if needed,
-            # but for outer thigh, it should fall on the segment.
             t = max(0.0, min(1.0, t))
             return (a[0] + t * ab[0], a[1] + t * ab[1])
             
-        # Shortest distance from crotch to the outseam line (Waist L to Hem LL)
-        thigh_l_left = project_point_to_line(crotch_pt, waist_l, hem_l_left)
+        proj_thigh = project_point_to_line(crotch_pt, waist_l, hem_l_left)
+        left_outline = [p for p in pants_pts if p[0] < crotch_pt[0]]
+        if not left_outline: left_outline = pants_pts
+        
+        thigh_l_left = min(left_outline, key=lambda p: self.dist(p, proj_thigh))
         thigh_l_right = crotch_pt
         
-        # 4. Measurements
-        len_l = self.dist(waist_l, hem_l_left)
-        len_r = self.dist(waist_r, hem_r_right)
-        length_cm = max(len_l, len_r) / ppcm
-        leg_line_start = waist_l if len_l > len_r else waist_r
-        leg_line_end = hem_l_left if len_l > len_r else hem_r_right
+        # 5. 허리 실루엣(곡선) 경로 추출
+        idx_wl = -1
+        idx_wr = -1
+        for i, pt in enumerate(pants_pts):
+            if pt == waist_l: idx_wl = i
+            if pt == waist_r: idx_wr = i
+            
+        path1 = []
+        path2 = []
+        n = len(pants_pts)
+        curr = idx_wl
+        while curr != idx_wr:
+            path1.append(pants_pts[curr])
+            curr = (curr + 1) % n
+        path1.append(waist_r)
         
-        waist_cm = self.dist(waist_l, waist_r) / ppcm
-        rise_cm = (crotch_pt[1] - waist_center_y) / ppcm
-        hem_cm = (self.dist(hem_l_left, hem_l_right) + self.dist(hem_r_left, hem_r_right)) / 2 / ppcm
+        curr = idx_wl
+        while curr != idx_wr:
+            path2.append(pants_pts[curr])
+            curr = (curr - 1 + n) % n
+        path2.append(waist_r)
+        
+        avg_y1 = sum(p[1] for p in path1) / len(path1) if path1 else 0
+        avg_y2 = sum(p[1] for p in path2) / len(path2) if path2 else 0
+        top_waist_path = path1 if avg_y1 < avg_y2 else path2
+        
+        # 허리 곡선 길이 계산 및 각 픽셀까지의 누적 거리 저장
+        waist_curve_len = 0
+        cumulative_distances = [0]
+        for i in range(len(top_waist_path) - 1):
+            d = self.dist(top_waist_path[i], top_waist_path[i+1])
+            waist_curve_len += d
+            cumulative_distances.append(waist_curve_len)
+            
+        # 곡선의 길이를 쫙 폈을 때 정확히 50%가 되는 정중앙 픽셀 찾기
+        half_len = waist_curve_len / 2
+        waist_center_top = top_waist_path[0]
+        for i, cum_dist in enumerate(cumulative_distances):
+            if cum_dist >= half_len:
+                waist_center_top = top_waist_path[i]
+                break
+                
+        # 6. 최종 치수 계산
+        length_cm = self.dist(waist_l, hem_l_left) / ppcm
+        waist_cm = waist_curve_len / ppcm
+        rise_cm = self.dist(waist_center_top, crotch_pt) / ppcm
+        hem_cm = self.dist(hem_l_left, hem_l_right) / ppcm
         thigh_cm = self.dist(thigh_l_left, thigh_l_right) / ppcm
 
         debug_img = cv2.cvtColor(warped_shirt_mask, cv2.COLOR_GRAY2BGR)
@@ -464,16 +486,13 @@ class ClothingMeasureEngine:
         
         cv2.drawContours(debug_img, [tshirt_cnt], -1, (255, 255, 255), 2)
         
-        hull_pts = cv2.convexHull(tshirt_cnt)
-        cv2.drawContours(debug_img, [hull_pts], -1, (0, 255, 255), 2)
-        
         if defects is not None:
             for i in range(defects.shape[0]):
                 s, e, f, d = defects[i, 0]
                 fx, fy = tshirt_cnt[f][0]
                 if d / 256.0 > 10.0:
                     cv2.circle(debug_img, (fx, fy), 4, (255, 0, 255), -1)
-        
+                    
         warped_a4_pts = cv2.perspectiveTransform(src_tri.reshape(-1, 1, 2), M_new)
         cv2.polylines(debug_img, [np.int32(warped_a4_pts)], True, (0, 255, 0), 2)
         cv2.putText(debug_img, "A4 (Transformed)", tuple(np.int32(warped_a4_pts[0][0])), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
@@ -489,12 +508,20 @@ class ClothingMeasureEngine:
             mid = ((p1_int[0] + p2_int[0]) // 2, (p1_int[1] + p2_int[1]) // 2 - 10)
             cv2.putText(debug_img, text, mid, cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
 
+        # 📌 선 그리기
+        # 1) 허리 단면 (실루엣 곡선을 따라 파란색 선 그리기)
+        for i in range(len(top_waist_path) - 1):
+            p1 = (int(top_waist_path[i][0]), int(top_waist_path[i][1]))
+            p2 = (int(top_waist_path[i+1][0]), int(top_waist_path[i+1][1]))
+            cv2.line(debug_img, p1, p2, (255, 100, 100), 3)
+
         draw_point(waist_l, (255, 100, 100), "Waist L")
         draw_point(waist_r, (255, 100, 100), "Waist R")
-        draw_line(waist_l, waist_r, (255, 100, 100), f"Waist {round(waist_cm,1)}cm")
+        draw_point(waist_center_top, (255, 100, 100), "Waist C")
+        cv2.putText(debug_img, f"Waist {round(waist_cm,1)}cm", (int(waist_center_top[0]) - 50, int(waist_center_top[1]) - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 100, 100), 2)
 
         draw_point(crotch_pt, (100, 255, 100), "Crotch")
-        draw_line(waist_mid, crotch_pt, (100, 255, 100), f"Rise {round(rise_cm,1)}cm")
+        draw_line(waist_center_top, crotch_pt, (100, 255, 100), f"Rise {round(rise_cm,1)}cm")
         
         draw_point(hem_l_left, (100, 100, 255), "Hem LL")
         draw_point(hem_l_right, (100, 100, 255), "Hem LR")
@@ -504,7 +531,7 @@ class ClothingMeasureEngine:
         draw_point(thigh_l_right, (255, 255, 100), "Thigh R")
         draw_line(thigh_l_left, thigh_l_right, (255, 255, 100), f"Thigh {round(thigh_cm,1)}cm")
         
-        draw_line(leg_line_start, leg_line_end, (200, 200, 200), f"Length {round(length_cm,1)}cm")
+        draw_line(waist_l, hem_l_left, (200, 200, 200), f"Length {round(length_cm,1)}cm")
 
         _, buffer = cv2.imencode('.jpg', debug_img)
         debug_base64 = base64.b64encode(buffer).decode('utf-8')

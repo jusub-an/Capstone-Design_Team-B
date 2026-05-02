@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import './ProductRegister.css';
+import MeasurementGuide from '../components/MeasurementGuide';
+import ErrorToast from '../components/ErrorToast';
+import MeasurementWarning, { validateMeasurements } from '../components/MeasurementWarning';
 
 function ProductRegister() {
   const navigate = useNavigate();
@@ -36,6 +39,9 @@ function ProductRegister() {
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
   const [cvLoading, setCvLoading] = useState(false);
+  const [errorToast, setErrorToast] = useState(null);
+  const [measurementWarnings, setMeasurementWarnings] = useState([]);
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
   
   const canvasRef = useRef(null);
   const imgRef = useRef(null);
@@ -345,13 +351,21 @@ function ProductRegister() {
         const data = await response.json();
         setCvResultData(data);
         setCvStep(4);
+
+        // 비율 기반 비정상 치수 검증
+        const validation = validateMeasurements(data, formData.category_type);
+        setMeasurementWarnings(validation.warnings);
       } else {
         const err = await response.json();
-        alert(`분석 실패: ${err.detail}`);
+        const errMsg = typeof err.detail === 'string' ? err.detail : JSON.stringify(err.detail);
+        // 알려진 에러 코드인지 확인
+        const knownCodes = ['A4_NOT_FOUND', 'A4_TOO_SMALL', 'A4_NOT_QUAD', 'WARP_TOO_LARGE', 'SHIRT_NOT_FOUND'];
+        const matchedCode = knownCodes.find(code => errMsg.includes(code));
+        setErrorToast({ code: matchedCode || null, detail: errMsg });
       }
     } catch (error) {
       console.error(error);
-      alert('오류가 발생했습니다. 다시 시도해주세요.');
+      setErrorToast({ code: null, detail: '네트워크 오류가 발생했습니다. 서버 연결 상태를 확인해주세요.' });
     } finally {
       setCvLoading(false);
     }
@@ -394,102 +408,175 @@ function ProductRegister() {
     setRectA4(null);
     setCurrentRect(null);
     setCvResultData(null);
+    setMeasurementWarnings([]);
+    setIsGuideOpen(false);
     if (canvasRef.current) {
       const ctx = canvasRef.current.getContext('2d');
       ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
     }
   };
 
+  const scrollToGuide = () => {
+    setIsGuideOpen(true);
+  };
+
   return (
     <div className="register-container">
       {/* CV Modal */}
+      {/* ErrorToast 오버레이 */}
+      {errorToast && (
+        <ErrorToast
+          errorCode={errorToast.code}
+          errorDetail={errorToast.detail}
+          onClose={() => setErrorToast(null)}
+        />
+      )}
+
       {showCvModal && (
         <div className="cv-modal-overlay">
-          <div className="cv-modal">
-            <button className="close-btn" onClick={handleCloseCvModal}>✕</button>
-            <h3>👕 AI 자동 치수 추출</h3>
-            <div className="cv-instructions">
-              {cvStep === 0 && "1️⃣ 사진을 업로드 해주세요."}
-              {cvStep === 1 && <span>2️⃣ 원본 이미지에서 <span style={{color:'#ff4444'}}>의류 영역</span>을 드래그하여 박스를 쳐주세요.</span>}
-              {cvStep === 2 && <span>3️⃣ 원본 이미지에서 <span style={{color:'#4CAF50'}}>A4 용지 영역</span>을 드래그하여 박스를 쳐주세요.</span>}
-              {cvStep === 3 && "✅ 영역 지정 완료! 하단의 분석 시작 버튼을 눌러주세요."}
-              {cvStep === 4 && "🎉 치수 추출 완료! 결과를 확인하고 적용하세요."}
-            </div>
+          <div className={`cv-modal ${isGuideOpen ? 'cv-modal-expanded' : ''}`}>
 
-            {cvStep === 0 && (
-              <div className="cv-upload-area">
-                <input type="file" accept="image/*" onChange={handleCvImageUpload} id="cvImageInput" style={{display: 'none'}} />
-                <label htmlFor="cvImageInput" className="cv-btn">📸 사진 선택하기</label>
-              </div>
-            )}
+            {/* 왼쪽: 가이드 패널 (모달 너비를 확장하면서 나타남) */}
+            <MeasurementGuide
+              categoryType={formData.category_type}
+              isOpen={isGuideOpen}
+              onClose={() => setIsGuideOpen(false)}
+            />
 
-            <div className="cv-canvas-container" style={{ display: (cvStep > 0 && cvStep < 4) ? 'flex' : 'none' }}>
-              <canvas
-                ref={canvasRef}
-                className="cv-canvas"
-                onMouseDown={onDown}
-                onMouseMove={onMove}
-                onMouseUp={onUp}
-                onTouchStart={onDown}
-                onTouchMove={onMove}
-                onTouchEnd={onUp}
-              ></canvas>
-            </div>
-
-            {cvStep === 4 && cvResultData && (
-              <div className="cv-result-container">
-                <div className="cv-result-image">
-                  <img src={`data:image/jpeg;base64,${cvResultData.debug_image_base64}`} alt="AI 추출 결과 시각화" />
-                </div>
-                <div className="cv-result-values">
-                  <div className="val-box"><span>총장</span><strong>{cvResultData.length_cm} cm</strong></div>
-                  {formData.category_type === 'Top' ? (
-                    <>
-                      <div className="val-box"><span>가슴단면</span><strong>{cvResultData.chest_cm} cm</strong></div>
-                      <div className="val-box"><span>소매끝단면</span><strong>{cvResultData.sleeve_width_cm} cm</strong></div>
-                      <div className="val-box"><span>넥라인</span><strong>{cvResultData.neck_width_cm} cm</strong></div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="val-box"><span>허리단면</span><strong>{cvResultData.waist_cm} cm</strong></div>
-                      <div className="val-box"><span>허벅지단면</span><strong>{cvResultData.thigh_cm} cm</strong></div>
-                      <div className="val-box"><span>밑위</span><strong>{cvResultData.rise_cm} cm</strong></div>
-                      <div className="val-box"><span>밑단단면</span><strong>{cvResultData.hem_cm} cm</strong></div>
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
-
-            <div className="cv-actions">
-              {(cvStep > 0 && cvStep < 4) && (
-                <button className="cv-btn secondary" onClick={() => {
-                  setCvStep(1); setRectShirt(null); setRectA4(null); setCurrentRect(null);
-                  redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, null, null, null);
-                }} disabled={cvLoading}>다시 그리기</button>
-              )}
-              {cvStep === 3 && (
-                <button className="cv-btn primary" onClick={handleAnalyze} disabled={cvLoading}>
-                  {cvLoading ? '분석 중...' : '🚀 AI 분석 시작'}
+            {/* 오른쪽: 메인 콘텐츠 */}
+            <div className="cv-main">
+              {/* 헤더 */}
+              <div className="cv-header">
+                <button
+                  type="button"
+                  className="cv-help-btn"
+                  onClick={() => setIsGuideOpen(!isGuideOpen)}
+                  title="촬영 가이드라인"
+                >
+                  ?
                 </button>
-              )}
-              {cvStep === 4 && (
-                <>
-                  <button className="cv-btn secondary" onClick={() => {
-                    setCvStep(1); setRectShirt(null); setRectA4(null); setCurrentRect(null);
-                    redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, null, null, null);
-                  }}>다시 측정하기</button>
-                  <button className="cv-btn primary" onClick={handleApplyMeasurements}>✅ 이 치수 적용하기</button>
-                </>
-              )}
-            </div>
-            
-            {cvLoading && (
-              <div className="cv-loader">
-                <div className="spinner"></div>
-                <p>AI 누끼 추출 및 텐서 기하학 분석 중...</p>
+                <h3 className="cv-title">
+                  {formData.category_type === 'Top' ? '👕' : '👖'} AI 자동 치수 추출
+                </h3>
+                <button className="cv-close-btn" onClick={handleCloseCvModal}>✕</button>
               </div>
-            )}
+
+              {/* 단계 표시줄 */}
+              <div className="cv-stepper">
+                {['업로드', '의류 영역', 'A4 영역', '분석', '결과'].map((label, i) => (
+                  <div key={i} className={`cv-step-dot ${cvStep >= i ? 'cv-step-active' : ''} ${cvStep === i ? 'cv-step-current' : ''}`}>
+                    <div className="cv-dot-circle">{cvStep > i ? '✓' : i + 1}</div>
+                    <span className="cv-dot-label">{label}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* 안내 메시지 */}
+              <div className="cv-instructions">
+                {cvStep === 0 && "사진을 업로드 해주세요."}
+                {cvStep === 1 && <span>원본 이미지에서 <span style={{color:'#f87171'}}>의류 영역</span>을 드래그하여 박스를 쳐주세요.</span>}
+                {cvStep === 2 && <span>원본 이미지에서 <span style={{color:'#4ade80'}}>A4 용지 영역</span>을 드래그하여 박스를 쳐주세요.</span>}
+                {cvStep === 3 && "영역 지정 완료! 분석을 시작하세요."}
+                {cvStep === 4 && "치수 추출 완료! 결과를 확인하고 적용하세요."}
+              </div>
+
+              {/* Step 0: 업로드 */}
+              {cvStep === 0 && (
+                <div className="cv-upload-area">
+                  <input type="file" accept="image/*" onChange={handleCvImageUpload} id="cvImageInput" style={{display: 'none'}} />
+                  <label htmlFor="cvImageInput" className="cv-upload-label">
+                    <span className="cv-upload-icon">📸</span>
+                    <span className="cv-upload-text">사진 선택하기</span>
+                    <span className="cv-upload-sub">JPG, PNG 파일을 선택하세요</span>
+                  </label>
+                </div>
+              )}
+
+              {/* Step 1~3: 캔버스 */}
+              <div className="cv-canvas-container" style={{ display: (cvStep > 0 && cvStep < 4) ? 'flex' : 'none' }}>
+                <canvas
+                  ref={canvasRef}
+                  className="cv-canvas"
+                  onMouseDown={onDown}
+                  onMouseMove={onMove}
+                  onMouseUp={onUp}
+                  onTouchStart={onDown}
+                  onTouchMove={onMove}
+                  onTouchEnd={onUp}
+                ></canvas>
+              </div>
+
+              {/* Step 4: 결과 */}
+              {cvStep === 4 && cvResultData && (
+                <div className="cv-result-container">
+                  <div className="cv-result-image">
+                    <img src={`data:image/jpeg;base64,${cvResultData.debug_image_base64}`} alt="AI 추출 결과 시각화" />
+                  </div>
+                  <div className="cv-result-values">
+                    <div className="val-box"><span>총장</span><strong>{cvResultData.length_cm} cm</strong></div>
+                    {formData.category_type === 'Top' ? (
+                      <>
+                        <div className="val-box"><span>가슴단면</span><strong>{cvResultData.chest_cm} cm</strong></div>
+                        <div className="val-box"><span>소매끝단면</span><strong>{cvResultData.sleeve_width_cm} cm</strong></div>
+                        <div className="val-box"><span>넥라인</span><strong>{cvResultData.neck_width_cm} cm</strong></div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="val-box"><span>허리단면</span><strong>{cvResultData.waist_cm} cm</strong></div>
+                        <div className="val-box"><span>허벅지단면</span><strong>{cvResultData.thigh_cm} cm</strong></div>
+                        <div className="val-box"><span>밑위</span><strong>{cvResultData.rise_cm} cm</strong></div>
+                        <div className="val-box"><span>밑단단면</span><strong>{cvResultData.hem_cm} cm</strong></div>
+                      </>
+                    )}
+                  </div>
+                  <MeasurementWarning warnings={measurementWarnings} onShowGuide={scrollToGuide} />
+                </div>
+              )}
+
+              {/* 액션 버튼 */}
+              <div className="cv-actions">
+                {(cvStep > 0 && cvStep < 4) && (
+                  <>
+                    <button className="cv-btn tertiary" onClick={() => {
+                      setCvStep(0); setCvImage(null); setRectShirt(null); setRectA4(null); setCurrentRect(null);
+                      imgRef.current = null;
+                      if (canvasRef.current) { canvasRef.current.getContext('2d').clearRect(0, 0, canvasRef.current.width, canvasRef.current.height); }
+                    }} disabled={cvLoading}>사진 변경</button>
+                    <button className="cv-btn secondary" onClick={() => {
+                      setCvStep(1); setRectShirt(null); setRectA4(null); setCurrentRect(null);
+                      redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, null, null, null);
+                    }} disabled={cvLoading}>다시 그리기</button>
+                  </>
+                )}
+                {cvStep === 3 && (
+                  <button className="cv-btn primary" onClick={handleAnalyze} disabled={cvLoading}>
+                    {cvLoading ? '분석 중...' : '🚀 AI 분석 시작'}
+                  </button>
+                )}
+                {cvStep === 4 && (
+                  <>
+                    <button className="cv-btn tertiary" onClick={() => {
+                      setCvStep(0); setCvImage(null); setRectShirt(null); setRectA4(null); setCurrentRect(null);
+                      setCvResultData(null); setMeasurementWarnings([]);
+                      imgRef.current = null;
+                      if (canvasRef.current) { canvasRef.current.getContext('2d').clearRect(0, 0, canvasRef.current.width, canvasRef.current.height); }
+                    }}>사진 변경</button>
+                    <button className="cv-btn secondary" onClick={() => {
+                      setCvStep(1); setRectShirt(null); setRectA4(null); setCurrentRect(null);
+                      redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, null, null, null);
+                    }}>다시 측정</button>
+                    <button className="cv-btn primary" onClick={handleApplyMeasurements}>✅ 치수 적용</button>
+                  </>
+                )}
+              </div>
+
+              {cvLoading && (
+                <div className="cv-loader">
+                  <div className="spinner"></div>
+                  <p>AI 누끼 추출 및 텐서 기하학 분석 중...</p>
+                </div>
+              )}
+            </div> {/* cv-main end */}
           </div>
         </div>
       )}
