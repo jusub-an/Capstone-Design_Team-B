@@ -179,6 +179,9 @@ function ProductDetail() {
 
             <div className="info-divider"></div>
 
+            <button className="btn-virtual-fitting" onClick={() => navigate(`/products/${id}/fitting`)}>
+              ✨ 가상 피팅 시뮬레이션
+            </button>
 
             <div className="purchase-actions">
               <button className="btn-cart">

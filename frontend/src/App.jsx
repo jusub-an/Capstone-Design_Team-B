@@ -10,6 +10,8 @@ import ReviewRegister from './pages/ReviewRegister';
 import Wishlist from './pages/Wishlist';
 import MyReviews from './pages/MyReviews';
 import BodyMeasure from './pages/BodyMeasure';
+import VirtualFitting from './pages/VirtualFitting';
+
 
 function App() {
   return (
@@ -25,6 +27,7 @@ function App() {
           <Route path="/register" element={<Register />} />
           <Route path="/products" element={<ProductList />} />
           <Route path="/products/:id" element={<ProductDetail />} />
+          <Route path="/products/:id/fitting" element={<VirtualFitting />} />
           <Route path="/products/new" element={<ProductRegister />} />
           <Route path="/products/edit/:id" element={<ProductRegister />} />
           <Route path="/mypage" element={<MyPage />} />
