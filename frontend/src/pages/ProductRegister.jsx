@@ -42,6 +42,7 @@ function ProductRegister() {
   const [errorToast, setErrorToast] = useState(null);
   const [measurementWarnings, setMeasurementWarnings] = useState([]);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
+  const [devDebugOpen, setDevDebugOpen] = useState(false);
   
   const canvasRef = useRef(null);
   const imgRef = useRef(null);
@@ -410,6 +411,7 @@ function ProductRegister() {
     setCvResultData(null);
     setMeasurementWarnings([]);
     setIsGuideOpen(false);
+    setDevDebugOpen(false);
     if (canvasRef.current) {
       const ctx = canvasRef.current.getContext('2d');
       ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
@@ -434,7 +436,7 @@ function ProductRegister() {
 
       {showCvModal && (
         <div className="cv-modal-overlay">
-          <div className={`cv-modal ${isGuideOpen ? 'cv-modal-expanded' : ''}`}>
+          <div className={`cv-modal ${isGuideOpen ? 'cv-modal-expanded' : ''} ${devDebugOpen ? 'cv-modal-debug-open' : ''}`}>
 
             {/* 왼쪽: 가이드 패널 (모달 너비를 확장하면서 나타남) */}
             <MeasurementGuide
@@ -530,6 +532,70 @@ function ProductRegister() {
                     )}
                   </div>
                   <MeasurementWarning warnings={measurementWarnings} onShowGuide={scrollToGuide} />
+
+                  {/* 🔧 Developer Debug Visualization Panel */}
+                  {cvResultData.debug_stages && (
+                    <div className="dev-debug-panel">
+                      <button
+                        type="button"
+                        className="dev-debug-toggle"
+                        onClick={() => setDevDebugOpen(!devDebugOpen)}
+                      >
+                        <span className="dev-debug-toggle-icon">{devDebugOpen ? '▼' : '▶'}</span>
+                        <span>🔧 개발자 디버그 시각화</span>
+                        <span className="dev-debug-badge">{Object.keys(cvResultData.debug_stages).length} stages</span>
+                      </button>
+                      {devDebugOpen && (
+                        <div className="dev-debug-content">
+                          {Object.entries(cvResultData.debug_stages)
+                            .sort(([a], [b]) => parseInt(a) - parseInt(b))
+                            .map(([key, base64Img]) => {
+                              const labels = {
+                                '0_shirt_crop_original': '0. 의류 크롭 원본 (Shirt Crop Original)',
+                                '1_a4_crop_original': '1. A4 크롭 원본 (A4 Crop Original)',
+                                '2_shirt_rembg_rgba': '2. 의류 배경 제거 결과 (Shirt rembg RGBA)',
+                                '3_a4_rembg_rgba': '3. A4 배경 제거 결과 (A4 rembg RGBA)',
+                                '4_a4_alpha_mask': '4. A4 알파 채널 마스크 (A4 Alpha Mask)',
+                                '5_a4_quad_detection': '5. A4 사각형 꼭짓점 검출 (A4 Quad Detection)',
+                                '6_shirt_alpha_mask': '6. 의류 알파 채널 마스크 (Shirt Alpha Mask)',
+                                '7_full_mask_on_canvas': '7. 전체 캔버스 마스크 배치 (Full Canvas Mask)',
+                                '8_warped_shirt_mask': '8. 원근 보정된 마스크 (Warped Mask)',
+                                '9_silhouette_contour': '9. 실루엣 윤곽선 (Silhouette Contour)',
+                                '10_convex_hull': '10. 볼록 껍질 (Convex Hull)',
+                                '11_convexity_defects': '11. 오목 결함점 (Convexity Defects)',
+                                '12_final_debug': '12. 최종 특징점 + 치수선 (Final Debug)',
+                              };
+                              const descs = {
+                                '0_shirt_crop_original': '프론트엔드에서 사용자가 드래그한 의류 영역을 잘라낸 원본 이미지입니다. rembg에 입력되는 원본 크롭.',
+                                '1_a4_crop_original': '프론트엔드에서 사용자가 드래그한 A4 용지 영역을 잘라낸 원본 이미지입니다. 스케일 기준 계산에 사용.',
+                                '2_shirt_rembg_rgba': 'rembg(U²-Net)로 배경을 제거한 의류 RGBA 결과. 체커보드 위에 합성하여 알파 채널 품질을 확인합니다.',
+                                '3_a4_rembg_rgba': 'rembg로 배경을 제거한 A4 용지 RGBA 결과. A4가 깨끗하게 분리되었는지 확인합니다.',
+                                '4_a4_alpha_mask': 'A4 RGBA의 알파 채널만 추출 후 이진화(threshold=10)한 마스크. 흰색=전경, 검정=배경.',
+                                '5_a4_quad_detection': 'A4 마스크에서 최대 윤곽선(초록)을 찾고 approxPolyDP로 4꼭짓점(빨강)을 검출한 결과.',
+                                '6_shirt_alpha_mask': '의류 RGBA의 알파 채널을 이진화한 마스크. 의류 실루엣이 정확히 분리되었는지 확인.',
+                                '7_full_mask_on_canvas': '크롭된 의류 마스크를 원본 전체 캔버스(orig_w × orig_h) 위에 올바른 좌표로 배치한 결과.',
+                                '8_warped_shirt_mask': 'A4 기반 원근 변환 행렬(M)을 적용하여 투시 왜곡을 보정한 의류 마스크.',
+                                '9_silhouette_contour': '보정된 마스크에서 findContours로 추출한 최대 윤곽선. 이후 모든 특징점 검출의 기반.',
+                                '10_convex_hull': '윤곽선(흰색)과 볼록 껍질(노란색)을 겹쳐서 표시. 껍질과 윤곽선의 차이가 오목 결함점이 됩니다.',
+                                '11_convexity_defects': '볼록 껍질 결함점 시각화. 빨간 점=깊이 10px 이상(유의미), 회색=미달. 숫자는 깊이(px).',
+                                '12_final_debug': '모든 특징점(겨드랑이, 목, 밑단 등)과 치수 측정선을 최종 합성한 디버그 이미지.',
+                              };
+                              return (
+                                <div key={key} className="dev-debug-item">
+                                  <div className="dev-debug-label">{labels[key] || key}</div>
+                                  <img
+                                    src={`data:image/jpeg;base64,${base64Img}`}
+                                    alt={key}
+                                    className="dev-debug-img"
+                                  />
+                                  <div className="dev-debug-desc">{descs[key] || ''}</div>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 

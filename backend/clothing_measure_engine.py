@@ -2,11 +2,17 @@ import cv2
 import numpy as np
 from rembg import remove
 import math
+import base64
 
 class ClothingMeasureEngine:
     def __init__(self):
         # rembg 모델은 첫 호출 시 자동 다운로드 (u2net)
         pass
+
+    def _encode_img(self, img):
+        """OpenCV 이미지를 base64 문자열로 변환"""
+        _, buffer = cv2.imencode('.jpg', img)
+        return base64.b64encode(buffer).decode('utf-8')
 
     def dist(self, p1, p2):
         return math.hypot(p1[0] - p2[0], p1[1] - p2[1])
@@ -21,8 +27,20 @@ class ClothingMeasureEngine:
         return math.hypot(p[0] - proj_x, p[1] - proj_y)
 
     def process(self, shirt_image_bytes, a4_image_bytes, shirt_rect, a4_rect, orig_w, orig_h, category_type="Top"):
+        debug_stages = {}  # 각 단계별 디버그 이미지 저장
+
+        # 0. 원본 크롭 이미지 저장
+        shirt_orig_nparr = np.frombuffer(shirt_image_bytes, np.uint8)
+        shirt_orig_img = cv2.imdecode(shirt_orig_nparr, cv2.IMREAD_COLOR)
+        if shirt_orig_img is not None:
+            debug_stages['0_shirt_crop_original'] = self._encode_img(shirt_orig_img)
+
+        a4_orig_nparr = np.frombuffer(a4_image_bytes, np.uint8)
+        a4_orig_img = cv2.imdecode(a4_orig_nparr, cv2.IMREAD_COLOR)
+        if a4_orig_img is not None:
+            debug_stages['1_a4_crop_original'] = self._encode_img(a4_orig_img)
+
         # 1. 배경 제거 (rembg)
-        # return_type: bytes
         shirt_mask_bytes = remove(shirt_image_bytes)
         a4_mask_bytes = remove(a4_image_bytes)
 
@@ -39,9 +57,17 @@ class ClothingMeasureEngine:
         if shirt_rgba.shape[2] != 4 or a4_rgba.shape[2] != 4:
             raise ValueError("Images do not have alpha channel after background removal")
 
+        # 디버그: rembg 결과 (RGBA → BGR with checkerboard bg)
+        debug_stages['2_shirt_rembg_rgba'] = self._encode_img(self._rgba_to_vis(shirt_rgba))
+        debug_stages['3_a4_rembg_rgba'] = self._encode_img(self._rgba_to_vis(a4_rgba))
+
         # 2. A4 분석
         a4_alpha = a4_rgba[:, :, 3]
         _, a4_alpha_thresh = cv2.threshold(a4_alpha, 10, 255, cv2.THRESH_BINARY)
+
+        # 디버그: A4 알파 마스크
+        debug_stages['4_a4_alpha_mask'] = self._encode_img(a4_alpha_thresh)
+
         contours_a4, _ = cv2.findContours(a4_alpha_thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         if len(contours_a4) == 0:
@@ -56,6 +82,13 @@ class ClothingMeasureEngine:
 
         if len(approx) != 4:
             raise ValueError("A4_NOT_QUAD")
+
+        # 디버그: A4 꼭짓점 시각화
+        a4_corners_vis = cv2.cvtColor(a4_alpha_thresh, cv2.COLOR_GRAY2BGR)
+        cv2.drawContours(a4_corners_vis, [cnt_a4], -1, (0, 255, 0), 2)
+        for pt in approx:
+            cv2.circle(a4_corners_vis, tuple(pt[0]), 8, (0, 0, 255), -1)
+        debug_stages['5_a4_quad_detection'] = self._encode_img(a4_corners_vis)
 
         # 글로벌 좌표계로 변환 (orig_w, orig_h 기준)
         pts = np.array([pt[0] + [a4_rect['x'], a4_rect['y']] for pt in approx], dtype=np.float32)
@@ -112,6 +145,9 @@ class ClothingMeasureEngine:
         full_shirt_mask = np.zeros((int(orig_h), int(orig_w)), dtype=np.uint8)
         shirt_alpha = shirt_rgba[:, :, 3]
         _, shirt_alpha_thresh = cv2.threshold(shirt_alpha, 10, 255, cv2.THRESH_BINARY)
+
+        # 디버그: 의류 알파 마스크
+        debug_stages['6_shirt_alpha_mask'] = self._encode_img(shirt_alpha_thresh)
         
         # 실제 이미지 마스크의 크기에 맞춤 (Frontend에서 소수점 픽셀 반올림 차이 해결)
         sy = int(shirt_rect['y'])
@@ -123,8 +159,14 @@ class ClothingMeasureEngine:
         
         full_shirt_mask[sy:ey, sx:ex] = shirt_alpha_thresh[:ey-sy, :ex-sx]
 
+        # 디버그: 전체 캔버스에 배치된 마스크
+        debug_stages['7_full_mask_on_canvas'] = self._encode_img(full_shirt_mask)
+
         warped_shirt_mask = cv2.warpPerspective(full_shirt_mask, M_new, (int(new_width), int(new_height)), flags=cv2.INTER_NEAREST)
         _, warped_shirt_mask = cv2.threshold(warped_shirt_mask, 127, 255, cv2.THRESH_BINARY)
+
+        # 디버그: 워프된 마스크
+        debug_stages['8_warped_shirt_mask'] = self._encode_img(warped_shirt_mask)
 
         contours_shirt, _ = cv2.findContours(warped_shirt_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
@@ -135,11 +177,36 @@ class ClothingMeasureEngine:
         x, y, w, h = cv2.boundingRect(tshirt_cnt)
         mid_x = x + w / 2
 
+        # 디버그: 실루엣 윤곽선
+        contour_vis = np.zeros_like(warped_shirt_mask)
+        cv2.drawContours(contour_vis, [tshirt_cnt], -1, 255, 2)
+        debug_stages['9_silhouette_contour'] = self._encode_img(contour_vis)
+
         if category_type == "Bottom":
-            return self._process_bottom(tshirt_cnt, warped_shirt_mask, src_tri, M_new, ppcm, x, y, w, h, mid_x)
+            return self._process_bottom(tshirt_cnt, warped_shirt_mask, src_tri, M_new, ppcm, x, y, w, h, mid_x, debug_stages)
 
         hull = cv2.convexHull(tshirt_cnt, returnPoints=False)
         defects = cv2.convexityDefects(tshirt_cnt, hull)
+
+        # 디버그: Convex Hull
+        hull_vis = cv2.cvtColor(warped_shirt_mask, cv2.COLOR_GRAY2BGR)
+        hull_vis[warped_shirt_mask > 0] = [40, 40, 40]
+        cv2.drawContours(hull_vis, [tshirt_cnt], -1, (255, 255, 255), 1)
+        hull_pts = cv2.convexHull(tshirt_cnt)
+        cv2.drawContours(hull_vis, [hull_pts], -1, (0, 255, 255), 2)
+        debug_stages['10_convex_hull'] = self._encode_img(hull_vis)
+
+        # 디버그: Convexity Defects (모든 결함점)
+        defects_vis = hull_vis.copy()
+        if defects is not None:
+            for i in range(defects.shape[0]):
+                s_d, e_d, f_d, d_d = defects[i, 0]
+                fx_d, fy_d = tshirt_cnt[f_d][0]
+                depth_d = d_d / 256.0
+                color = (0, 0, 255) if depth_d > 10.0 else (128, 128, 128)
+                cv2.circle(defects_vis, (fx_d, fy_d), 5, color, -1)
+                cv2.putText(defects_vis, f"{depth_d:.0f}", (fx_d+6, fy_d-6), cv2.FONT_HERSHEY_SIMPLEX, 0.35, color, 1)
+        debug_stages['11_convexity_defects'] = self._encode_img(defects_vis)
 
         armpit_l = None
         armpit_r = None
@@ -362,9 +429,10 @@ class ClothingMeasureEngine:
         draw_point(neck_r, (255, 255, 100), "Neck R")
         draw_line(neck_l, neck_r, (255, 255, 100), f"Neck {round(neck_cm,1)}cm")
 
-        import base64
-        _, buffer = cv2.imencode('.jpg', debug_img)
-        debug_base64 = base64.b64encode(buffer).decode('utf-8')
+        debug_base64 = self._encode_img(debug_img)
+
+        # 디버그: 최종 결과 이미지
+        debug_stages['12_final_debug'] = debug_base64
 
         return {
             "length_cm": round(length_cm, 1),
@@ -372,14 +440,49 @@ class ClothingMeasureEngine:
             "sleeve_width_cm": round(sle_wid_cm, 1),
             "neck_width_cm": round(neck_cm, 1),
             "debug_image_base64": debug_base64,
+            "debug_stages": debug_stages,
             "status": "success"
         }
 
-    def _process_bottom(self, tshirt_cnt, warped_shirt_mask, src_tri, M_new, ppcm, x, y, w, h, mid_x):
-        import base64
-        import numpy as np
+    def _rgba_to_vis(self, rgba_img):
+        """RGBA 이미지를 체커보드 배경 위에 합성하여 시각화"""
+        h, w = rgba_img.shape[:2]
+        checker = np.zeros((h, w, 3), dtype=np.uint8)
+        block = 16
+        for cy in range(0, h, block):
+            for cx in range(0, w, block):
+                color = 200 if ((cy // block) + (cx // block)) % 2 == 0 else 160
+                checker[cy:cy+block, cx:cx+block] = color
+        alpha = rgba_img[:, :, 3:4].astype(np.float32) / 255.0
+        bgr = rgba_img[:, :, :3].astype(np.float32)
+        result = (bgr * alpha + checker.astype(np.float32) * (1 - alpha)).astype(np.uint8)
+        return result
+
+    def _process_bottom(self, tshirt_cnt, warped_shirt_mask, src_tri, M_new, ppcm, x, y, w, h, mid_x, debug_stages=None):
+        if debug_stages is None:
+            debug_stages = {}
         hull = cv2.convexHull(tshirt_cnt, returnPoints=False)
         defects = cv2.convexityDefects(tshirt_cnt, hull)
+
+        # 디버그: 하의 Convex Hull
+        hull_vis = cv2.cvtColor(warped_shirt_mask, cv2.COLOR_GRAY2BGR)
+        hull_vis[warped_shirt_mask > 0] = [40, 40, 40]
+        cv2.drawContours(hull_vis, [tshirt_cnt], -1, (255, 255, 255), 1)
+        hull_pts = cv2.convexHull(tshirt_cnt)
+        cv2.drawContours(hull_vis, [hull_pts], -1, (0, 255, 255), 2)
+        debug_stages['10_convex_hull'] = self._encode_img(hull_vis)
+
+        # 디버그: 하의 Convexity Defects
+        defects_vis = hull_vis.copy()
+        if defects is not None:
+            for i in range(defects.shape[0]):
+                s_d, e_d, f_d, d_d = defects[i, 0]
+                fx_d, fy_d = tshirt_cnt[f_d][0]
+                depth_d = d_d / 256.0
+                color = (0, 0, 255) if depth_d > 10.0 else (128, 128, 128)
+                cv2.circle(defects_vis, (fx_d, fy_d), 5, color, -1)
+                cv2.putText(defects_vis, f"{depth_d:.0f}", (fx_d+6, fy_d-6), cv2.FONT_HERSHEY_SIMPLEX, 0.35, color, 1)
+        debug_stages['11_convexity_defects'] = self._encode_img(defects_vis)
         
         crotch_pt = None
         max_depth = 0
@@ -533,8 +636,8 @@ class ClothingMeasureEngine:
         
         draw_line(waist_l, hem_l_left, (200, 200, 200), f"Length {round(length_cm,1)}cm")
 
-        _, buffer = cv2.imencode('.jpg', debug_img)
-        debug_base64 = base64.b64encode(buffer).decode('utf-8')
+        debug_base64 = self._encode_img(debug_img)
+        debug_stages['12_final_debug'] = debug_base64
 
         return {
             "length_cm": round(length_cm, 1),
@@ -543,5 +646,6 @@ class ClothingMeasureEngine:
             "thigh_cm": round(thigh_cm, 1),
             "hem_cm": round(hem_cm, 1),
             "debug_image_base64": debug_base64,
+            "debug_stages": debug_stages,
             "status": "success"
         }
