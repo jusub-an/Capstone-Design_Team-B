@@ -119,15 +119,21 @@ class BodyMeasureEngine:
 
         # ══════════════════════════════════════
         # 1. 어깨단면
-        #    HTML: findShoulderTop → 어깨 랜드마크 x열에서 마스크 상단 엣지 찾기
-        #    → 두 점 사이 유클리드 거리
+        #    스켈레톤 어깨 랜드마크 Y 위치 기준으로 실루엣 양쪽 끝 탐색.
+        #    (기존: 어깨 X열 최상단 → 너무 위쪽)
         # ══════════════════════════════════════
-        sh_top_left  = self._find_shoulder_edge(mask, lm11["x"], lm11["y"])
-        sh_top_right = self._find_shoulder_edge(mask, lm12["x"], lm12["y"])
-        shoulder_width_px = math.hypot(
-            sh_top_right["x"] - sh_top_left["x"],
-            sh_top_right["y"] - sh_top_left["y"],
-        )
+        shoulder_span = self._get_horizontal_width(mask, spine_x, shoulder_y)
+        if shoulder_span is not None:
+            sh_top_left       = shoulder_span["p_start"]
+            sh_top_right      = shoulder_span["p_end"]
+            shoulder_width_px = shoulder_span["width_px"]
+        else:
+            sh_top_left  = self._find_shoulder_edge(mask, lm11["x"], lm11["y"])
+            sh_top_right = self._find_shoulder_edge(mask, lm12["x"], lm12["y"])
+            shoulder_width_px = math.hypot(
+                sh_top_right["x"] - sh_top_left["x"],
+                sh_top_right["y"] - sh_top_left["y"],
+            )
 
         # ══════════════════════════════════════
         # 2. 겨드랑이 앵커 (Gap Vanishing Raycast)
@@ -148,18 +154,29 @@ class BodyMeasureEngine:
 
         # ══════════════════════════════════════
         # 3. 가슴단면
-        #    HTML: chestSpan = { pStart: AR_pt, pEnd: AL_pt, widthPx: hypot(...) }
-        #    두 겨드랑이 앵커 간 유클리드 거리 (마스크 폭이 아님)
+        #    표시 Y: 어깨에서 15% 아래 = 흉근/유두 수준 (빨간선 위치).
+        #    표시 X: 위→아래 스캔으로 찾은 겨드랑이 앵커 X 사용.
+        #      → 흉근 수준에서는 팔-몸 갭이 없지만, 겨드랑이 앵커 X는
+        #         흉근 수준의 팔-몸통 경계선과 큰 차이 없으므로 근사값으로 사용.
+        #    허리 계산용 armpit_y: 실제 겨드랑이 Y (chest 표시 Y와 분리).
         # ══════════════════════════════════════
+        chest_display_y = int(shoulder_y + (hip_y - shoulder_y) * 0.15)
+        chest_anchors   = self._find_chest_anchors_topdown(mask, spine_x, shoulder_y, hip_y)
+
         chest_width_px = None
         chest_p_start  = chest_p_end = None
-        if armpits["left_armpit"] is not None and armpits["right_armpit"] is not None:
-            chest_p_start = armpits["left_armpit"]
-            chest_p_end   = armpits["right_armpit"]
-            chest_width_px = math.hypot(
-                chest_p_end["x"] - chest_p_start["x"],
-                chest_p_end["y"] - chest_p_start["y"],
-            )
+        actual_armpit_y = None
+
+        if chest_anchors is not None:
+            actual_armpit_y = (chest_anchors["left"]["y"] + chest_anchors["right"]["y"]) / 2
+            chest_p_start = {"x": chest_anchors["left"]["x"],  "y": float(chest_display_y)}
+            chest_p_end   = {"x": chest_anchors["right"]["x"], "y": float(chest_display_y)}
+            chest_width_px = abs(chest_p_end["x"] - chest_p_start["x"])
+        elif armpits["left_armpit"] is not None and armpits["right_armpit"] is not None:
+            actual_armpit_y = (armpits["left_armpit"]["y"] + armpits["right_armpit"]["y"]) / 2
+            chest_p_start = {"x": armpits["left_armpit"]["x"],  "y": float(chest_display_y)}
+            chest_p_end   = {"x": armpits["right_armpit"]["x"], "y": float(chest_display_y)}
+            chest_width_px = abs(chest_p_end["x"] - chest_p_start["x"])
 
         # ══════════════════════════════════════
         # 4. 사타구니 앵커
@@ -170,11 +187,9 @@ class BodyMeasureEngine:
         # ══════════════════════════════════════
         # 5. 허리단면
         #    HTML: chestY+20 ~ hipY-10 구간에서 최소 수평 폭
+        #    actual_armpit_y(실제 겨드랑이 Y)를 기준으로 사용 (chest_display_y 아님)
         # ══════════════════════════════════════
-        armpit_y = None
-        if chest_p_start and chest_p_end:
-            armpit_y = (chest_p_start["y"] + chest_p_end["y"]) / 2
-        waist_span = self._find_waist_width(mask, spine_x, shoulder_y, hip_y, armpit_y)
+        waist_span = self._find_waist_width(mask, spine_x, shoulder_y, hip_y, actual_armpit_y)
 
         # ══════════════════════════════════════
         # 6. 골반단면
@@ -187,6 +202,23 @@ class BodyMeasureEngine:
         right_arm_px = self._dist(lm12, lm14) + self._dist(lm14, lm16)
         left_leg_px  = self._dist(lm23, lm25) + self._dist(lm25, lm29)
         right_leg_px = self._dist(lm24, lm26) + self._dist(lm26, lm30)
+
+        # ══════════════════════════════════════
+        # 7. 이두부근(상완) 폭
+        #    bicep_y = 어깨~겨드랑이 40% 지점
+        #    내측 기준: shoulder_x → armpit_x 방향으로 bicep_y까지 보간
+        #    외측 기준: bicep_y 행의 팔 방향 실루엣 가장자리
+        #
+        #    armpit 좌우 대응:
+        #      lm11(인체 좌팔=화면 우) ↔ right_armpit(화면 우 갭)
+        #      lm12(인체 우팔=화면 좌) ↔ left_armpit(화면 좌 갭)
+        # ══════════════════════════════════════
+        left_bicep_span  = self._measure_bicep_width(
+            mask, lm11, lm13,
+            armpits["right_armpit"])
+        right_bicep_span = self._measure_bicep_width(
+            mask, lm12, lm14,
+            armpits["left_armpit"])
 
         # ── 측정값 목록 조립 ──
         measurements: List[Dict[str, Any]] = [
@@ -222,6 +254,17 @@ class BodyMeasureEngine:
             self._item("right_leg_length", "우다리길이", right_leg_px, cm_per_pixel,
                        self._xy(lm24), self._xy(lm30)),
         ]
+
+        if left_bicep_span is not None:
+            measurements.append(self._item(
+                "left_bicep_width", "좌측이두", left_bicep_span["width_px"], cm_per_pixel,
+                left_bicep_span["p_start"], left_bicep_span["p_end"],
+            ))
+        if right_bicep_span is not None:
+            measurements.append(self._item(
+                "right_bicep_width", "우측이두", right_bicep_span["width_px"], cm_per_pixel,
+                right_bicep_span["p_start"], right_bicep_span["p_end"],
+            ))
 
         debug_image = self._draw_debug(image_bgr, landmarks, top_y, bottom_y,
                                        armpits, crotch, measurements)
@@ -430,6 +473,57 @@ class BodyMeasureEngine:
 
         return {"left_armpit": last_left_gap, "right_armpit": last_right_gap}
 
+    def _find_chest_anchors_topdown(self, mask: np.ndarray, spine_x: int,
+                                    shoulder_y: int, hip_y: int) -> Optional[Dict]:
+        """
+        어깨→아래 방향 스캔으로 팔-몸 갭이 처음 나타나는 위치 = 실제 겨드랑이 수준.
+
+        bottom-up 스캔(findArmpitsScan)은 아래에서 위로 올라가며 갭이 사라지는 지점을
+        겨드랑이로 판단하는데, 팔이 몸에 밀착된 자세에서는 엉덩이 옆 갭만 감지되어
+        겨드랑이가 허리 아래로 잘못 검출되는 문제가 있다.
+
+        top-down 스캔은 어깨 바로 아래에서 출발하여 처음으로 팔-몸 갭이 생기는 Y를
+        반환하므로 항상 올바른 가슴/겨드랑이 수준을 가리킨다.
+        MIN_GAP_PX를 bottom-up보다 작게 설정해 좁은 갭도 감지.
+        """
+        h, w = mask.shape[:2]
+        MIN_GAP_PX = max(3, int(w * 0.007))   # bottom-up(0.01)보다 작게
+
+        start_y = int(shoulder_y)
+        end_y   = int(shoulder_y + (hip_y - shoulder_y) * 0.55)
+
+        for y in range(start_y, end_y):
+            left_anchor = right_anchor = None
+
+            # 화면 왼쪽 갭 (인체 오른쪽 팔)
+            gap_x = arm_x = -1
+            for x in range(spine_x, 0, -1):
+                if not self._px(mask, x, y):
+                    gap_x = x; break
+            if gap_x != -1:
+                for x in range(gap_x - 1, 0, -1):
+                    if self._px(mask, x, y):
+                        arm_x = x; break
+            if gap_x != -1 and arm_x != -1 and (gap_x - arm_x) >= MIN_GAP_PX:
+                left_anchor = {"x": float((gap_x + arm_x) // 2), "y": float(y)}
+
+            # 화면 오른쪽 갭 (인체 왼쪽 팔)
+            gap_x = arm_x = -1
+            for x in range(spine_x, w - 1):
+                if not self._px(mask, x, y):
+                    gap_x = x; break
+            if gap_x != -1:
+                for x in range(gap_x + 1, w - 1):
+                    if self._px(mask, x, y):
+                        arm_x = x; break
+            if gap_x != -1 and arm_x != -1 and (arm_x - gap_x) >= MIN_GAP_PX:
+                right_anchor = {"x": float((gap_x + arm_x) // 2), "y": float(y)}
+
+            if left_anchor is not None and right_anchor is not None:
+                return {"left": left_anchor, "right": right_anchor}
+
+        return None
+
     def _find_crotch_scan(self, mask: np.ndarray, spine_x: int,
                           hip_y: int, knee_y: int) -> Optional[Dict[str, float]]:
         """
@@ -518,6 +612,102 @@ class BodyMeasureEngine:
                 min_span  = span
 
         return min_span
+
+    def _measure_bicep_width(self, mask: np.ndarray,
+                              shoulder_lm: Dict, elbow_lm: Dict,
+                              armpit_pt: Optional[Dict] = None) -> Optional[Dict[str, Any]]:
+        """
+        HTML getThicknessFromAnchor 포팅.
+
+        겨드랑이 앵커(armpit_pt)에서 어깨→팔꿈치 직선 방향으로 레이캐스트.
+        팔 각도에 맞춰 단면 방향을 결정하므로 15도 A-포즈에서도 정확.
+
+        HTML과의 차이: Python 이진 마스크는 갭이 실제 빈 픽셀이므로
+          Phase 1 — 갭을 건너 팔 내측 경계(inner_pt) 탐색
+          Phase 2 — 팔 외측 경계(outer_pt)까지 스캔
+          → 두 점 모두 팔 실루엣 위에만 위치 → 흉곽 침범 없음.
+        """
+        h, w = mask.shape[:2]
+        shoulder_x = float(shoulder_lm["x"])
+        shoulder_y = float(shoulder_lm["y"])
+        elbow_x    = float(elbow_lm["x"])
+        elbow_y    = float(elbow_lm["y"])
+
+        # 폴백: armpit_pt 없으면 어깨→팔꿈치 40% 지점 수평 스캔
+        if armpit_pt is None:
+            t = 0.4
+            cx = int(shoulder_x + (elbow_x - shoulder_x) * t)
+            cy = max(0, min(h - 1, int(shoulder_y + (elbow_y - shoulder_y) * t)))
+            if not self._px(mask, cx, cy):
+                return None
+            lx = cx
+            while lx > 0 and self._px(mask, lx - 1, cy): lx -= 1
+            rx = cx
+            while rx < w - 1 and self._px(mask, rx + 1, cy): rx += 1
+            width_px = float(rx - lx)
+            if width_px <= 0:
+                return None
+            return {"width_px": width_px,
+                    "p_start": {"x": float(lx), "y": float(cy)},
+                    "p_end":   {"x": float(rx), "y": float(cy)}}
+
+        ax = float(armpit_pt["x"])
+        ay = float(armpit_pt["y"])
+
+        # 어깨-팔꿈치 직선에 겨드랑이 앵커를 투영 → 팔 방향 단위벡터 산출
+        # (HTML: projX/projY 계산과 동일)
+        bx = elbow_x - shoulder_x
+        by = elbow_y - shoulder_y
+        lenSq = bx * bx + by * by
+        if lenSq < 1:
+            return None
+        t = ((ax - shoulder_x) * bx + (ay - shoulder_y) * by) / lenSq
+        proj_x = shoulder_x + t * bx
+        proj_y = shoulder_y + t * by
+
+        dx, dy = proj_x - ax, proj_y - ay
+        d_len = math.hypot(dx, dy)
+        if d_len < 1:
+            return None
+        ux, uy = dx / d_len, dy / d_len   # 겨드랑이 → 팔 방향 단위벡터
+
+        max_scan = int(w * 0.35)
+
+        # Phase 1: 갭을 건너 팔 내측 경계 탐색 (이진 마스크 대응)
+        inner_step = -1
+        for step in range(max_scan):
+            cx = int(ax + ux * step)
+            cy = int(ay + uy * step)
+            if self._px(mask, cx, cy):
+                inner_step = step
+                break
+        if inner_step < 0:
+            return None
+
+        # Phase 2: 팔 외측 경계까지 스캔 (HTML: !isPersonPixel → break)
+        outer_step = inner_step
+        for step in range(inner_step, max_scan):
+            cx = int(ax + ux * step)
+            cy = int(ay + uy * step)
+            if not self._px(mask, cx, cy):
+                break
+            outer_step = step
+
+        inner_pt = {"x": float(int(ax + ux * inner_step)),
+                    "y": float(int(ay + uy * inner_step))}
+        outer_pt = {"x": float(int(ax + ux * outer_step)),
+                    "y": float(int(ay + uy * outer_step))}
+
+        width_px = math.hypot(outer_pt["x"] - inner_pt["x"],
+                               outer_pt["y"] - inner_pt["y"])
+        if width_px <= 0:
+            return None
+
+        return {
+            "width_px": width_px,
+            "p_start": inner_pt,
+            "p_end":   outer_pt,
+        }
 
     def _xy(self, lm: Dict) -> Dict[str, float]:
         return {"x": lm["x"], "y": lm["y"]}

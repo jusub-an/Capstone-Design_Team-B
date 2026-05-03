@@ -37,12 +37,20 @@ app = FastAPI(title="Capstone Design FastAPI", version="1.0.0")
 @app.on_event("startup")
 def startup():
     get_measure_engine()
-    auto_migrate_db()
-    seed_data()
+    try:
+        auto_migrate_db()
+    except Exception as e:
+        print(f"DB migration skipped (DB unavailable): {e}")
+    try:
+        seed_data()
+    except Exception as e:
+        print(f"Seed data skipped (DB unavailable): {e}")
 
 def auto_migrate_db():
     from sqlalchemy import text
     from database import engine
+    if engine is None:
+        raise RuntimeError("DB engine not initialized")
     with engine.connect() as conn:
         try:
             conn.execute(text("SELECT waist FROM product_sizes WHERE 1=0"))
