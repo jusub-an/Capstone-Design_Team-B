@@ -28,21 +28,29 @@ class ProductImageResponse(BaseModel):
     class Config:
         from_attributes = True
 
-class ProductSizeBase(BaseModel):
+class TopSizeBase(BaseModel):
     size_name: str
     length: float | None = None
     chest: float | None = None
+    shoulder: float | None = None
     sleeve: float | None = None
     neck: float | None = None
+
+class TopSizeResponse(TopSizeBase):
+    id: int
+    product_id: int
+    class Config:
+        from_attributes = True
+
+class BottomSizeBase(BaseModel):
+    size_name: str
+    length: float | None = None
     waist: float | None = None
     thigh: float | None = None
     rise: float | None = None
     hem: float | None = None
 
-class ProductSizeCreate(ProductSizeBase):
-    pass
-
-class ProductSizeResponse(ProductSizeBase):
+class BottomSizeResponse(BottomSizeBase):
     id: int
     product_id: int
     class Config:
@@ -56,7 +64,8 @@ class ProductResponse(BaseModel):
     description: str | None = None
     image_url: str
     desc_images: list[ProductImageResponse] = []
-    sizes: list[ProductSizeResponse] = []
+    top_sizes: list[TopSizeResponse] = []
+    bottom_sizes: list[BottomSizeResponse] = []
     owner_email: str | None = None
     category: 'CategoryResponse'
     avg_rating: float = 0.0

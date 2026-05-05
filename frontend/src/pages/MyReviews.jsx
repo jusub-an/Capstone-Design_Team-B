@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Star, Edit2, Trash2, ChevronLeft, MessageSquare, ExternalLink } from 'lucide-react';
+import { Star, Edit2, Trash2, ChevronLeft, MessageSquare, ExternalLink, Search, Heart, ShoppingBag } from 'lucide-react';
+import './ProductList.css';
 import axios from 'axios';
 import './MyReviews.css';
 
@@ -8,7 +9,10 @@ export default function MyReviews() {
   const navigate = useNavigate();
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
   const userEmail = sessionStorage.getItem('userEmail');
+  const username = sessionStorage.getItem('username') || 'User';
+  const isLoggedIn = !!sessionStorage.getItem('token');
 
   useEffect(() => {
     if (!userEmail) {
@@ -46,18 +50,59 @@ export default function MyReviews() {
     return dateString.split('T')[0];
   };
 
+  const handleLogout = () => {
+    sessionStorage.removeItem('token');
+    sessionStorage.removeItem('username');
+    sessionStorage.removeItem('userEmail');
+    navigate('/login');
+  };
+
   if (loading) return <div className="my-reviews-loading">로딩 중...</div>;
 
   return (
-    <div className="my-reviews-container">
-      <div className="my-reviews-header">
-        <button onClick={() => navigate('/mypage')} className="back-btn">
-          <ChevronLeft size={20} />
-          <span>마이페이지</span>
-        </button>
-        <h1>내 리뷰 관리</h1>
-        <p>작성하신 {reviews.length}개의 소중한 리뷰들이 있습니다.</p>
-      </div>
+    <div className="product-list-container">
+      <header className="product-header">
+        <div className="logo-section" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>
+          <h2>Virtual Fitting</h2>
+        </div>
+
+
+        <div className="header-actions">
+          <button className="action-icon-btn" onClick={() => navigate('/mypage/wishes')}>
+            <Heart size={22} />
+          </button>
+          <button className="action-icon-btn">
+            <ShoppingBag size={22} />
+            <span className="badge">0</span>
+          </button>
+
+          {isLoggedIn ? (
+            <div className="user-profile-wrapper">
+              <div className="user-avatar" title="User Profile">
+                {username.charAt(0).toUpperCase()}
+              </div>
+              <div className="dropdown-menu">
+                <ul>
+                  <li onClick={() => navigate('/mypage')}>마이페이지</li>
+                  <li onClick={handleLogout} className="logout-action">로그아웃</li>
+                </ul>
+              </div>
+            </div>
+          ) : (
+            <button className="login-header-button" onClick={() => navigate('/login')}>로그인</button>
+          )}
+        </div>
+      </header>
+
+      <div className="my-reviews-container">
+        <div className="my-reviews-header">
+          <button onClick={() => navigate('/mypage')} className="back-btn">
+            <ChevronLeft size={20} />
+            <span>마이페이지</span>
+          </button>
+          <h1>내 리뷰 관리</h1>
+          <p>작성하신 {reviews.length}개의 소중한 리뷰들이 있습니다.</p>
+        </div>
 
       {reviews.length === 0 ? (
         <div className="empty-reviews">
@@ -125,6 +170,7 @@ export default function MyReviews() {
           ))}
         </div>
       )}
+      </div>
     </div>
   );
 }

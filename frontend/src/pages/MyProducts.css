@@ -9,23 +9,36 @@
 }
 
 .my-products-header h1 {
-  font-size: 2rem;
+  font-size: 2.2rem;
   font-weight: 800;
   color: #1e293b;
   margin-bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.title-count {
+  font-size: 1.1rem;
+  font-weight: 600;
+  background: #f1f5f9;
+  color: #64748b;
+  padding: 4px 12px;
+  border-radius: 20px;
 }
 
 .header-title-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 15px;
-  margin-bottom: 8px;
+  margin-top: 10px;
+  margin-bottom: 6px;
 }
 
-.my-products-header p {
-  color: #64748b;
-  font-size: 1.1rem;
+.header-subtitle {
+  color: #94a3b8;
+  font-size: 1.05rem;
+  font-weight: 500;
 }
 
 .back-btn {
@@ -103,7 +116,7 @@
   color: #333;
 }
 
-.actions-cell {
+.actions-wrapper {
   display: flex;
   gap: 10px;
 }

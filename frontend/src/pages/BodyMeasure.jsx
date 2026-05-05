@@ -1,7 +1,8 @@
 import { useState, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { ChevronLeft, Upload, Ruler, AlertTriangle, CheckCircle } from 'lucide-react';
+import { ChevronLeft, Upload, Ruler, AlertTriangle, CheckCircle, Search, Heart, ShoppingBag } from 'lucide-react';
+import './MyReviews.css';
 import './ProductList.css';
 
 const TAB_LABELS = [
@@ -19,7 +20,9 @@ const cardStyle = {
 
 function BodyMeasure() {
   const navigate = useNavigate();
+  const [searchQuery, setSearchQuery] = useState('');
   const username = sessionStorage.getItem('username') || 'User';
+  const isLoggedIn = !!sessionStorage.getItem('token');
   const fileInputRef = useRef(null);
 
   const [image, setImage] = useState(null);
@@ -65,16 +68,58 @@ function BodyMeasure() {
     }
   };
 
+  const handleLogout = () => {
+    sessionStorage.removeItem('token');
+    sessionStorage.removeItem('username');
+    sessionStorage.removeItem('userEmail');
+    navigate('/login');
+  };
+
   return (
-    <div className="wishlist-container">
-        <div className="wishlist-header">
-            <button onClick={() => navigate('/mypage')} className="back-btn">
-              <ChevronLeft size={20} />
-              <span>마이페이지</span>
-            </button>
-            <h1>신체 측정</h1>
-          </div>
-    <main className="product-main" style={{ maxWidth: '760px', margin: '0 auto', padding: '30px 20px' }}>
+    <div className="product-list-container">
+      <header className="product-header">
+        <div className="logo-section" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>
+          <h2>Virtual Fitting</h2>
+        </div>
+
+
+        <div className="header-actions">
+          <button className="action-icon-btn" onClick={() => navigate('/mypage/wishes')}>
+            <Heart size={22} />
+          </button>
+          <button className="action-icon-btn">
+            <ShoppingBag size={22} />
+            <span className="badge">0</span>
+          </button>
+
+          {isLoggedIn ? (
+            <div className="user-profile-wrapper">
+              <div className="user-avatar" title="User Profile">
+                {username.charAt(0).toUpperCase()}
+              </div>
+              <div className="dropdown-menu">
+                <ul>
+                  <li onClick={() => navigate('/mypage')}>마이페이지</li>
+                  <li onClick={handleLogout} className="logout-action">로그아웃</li>
+                </ul>
+              </div>
+            </div>
+          ) : (
+            <button className="login-header-button" onClick={() => navigate('/login')}>로그인</button>
+          )}
+        </div>
+      </header>
+
+      <div className="my-reviews-container">
+        <div className="my-reviews-header">
+          <button onClick={() => navigate('/mypage')} className="back-btn">
+            <ChevronLeft size={20} />
+            <span>마이페이지</span>
+          </button>
+          <h1>신체 측정</h1>
+          <p>당신의 신체 치수를 분석하여 최적의 아바타를 생성합니다.</p>
+        </div>
+      <main className="product-main" style={{ maxWidth: '760px', margin: '0 auto', padding: '30px 20px' }}>
 
         <div style={{ ...cardStyle, marginBottom: '24px' }}>
           <div style={{ marginBottom: '20px' }}>
@@ -262,6 +307,7 @@ function BodyMeasure() {
           </div>
         )}
       </main>
+      </div>
     </div>
   );
 }

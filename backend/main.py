@@ -45,17 +45,19 @@ def auto_migrate_db():
     from database import engine
     with engine.connect() as conn:
         try:
-            conn.execute(text("SELECT waist FROM product_sizes WHERE 1=0"))
+            # Check if product_sizes exists and drop it if it does
+            conn.execute(text("DROP TABLE product_sizes"))
+            conn.commit()
+            print("Dropped old product_sizes table.")
         except Exception:
-            try:
-                conn.execute(text("ALTER TABLE product_sizes ADD waist FLOAT"))
-                conn.execute(text("ALTER TABLE product_sizes ADD thigh FLOAT"))
-                conn.execute(text("ALTER TABLE product_sizes ADD rise FLOAT"))
-                conn.execute(text("ALTER TABLE product_sizes ADD hem FLOAT"))
-                conn.commit()
-                print("DB auto-migration completed: added bottom columns to product_sizes.")
-            except Exception as e:
-                print(f"DB auto-migration failed: {e}")
+            pass
+        
+        # Ensure new tables are created
+        try:
+            models.Base.metadata.create_all(bind=engine)
+            print("DB auto-migration completed: created top_sizes and bottom_sizes tables.")
+        except Exception as e:
+            print(f"DB auto-migration failed: {e}")
 
 def seed_data():
     from database import SessionLocal
@@ -212,6 +214,14 @@ async def measure_clothing(
 
 # --- 상품 및 통계 관리 ---
 
+def to_float(val):
+    if val is None or (isinstance(val, str) and val.strip() == ''):
+        return None
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return None
+
 # 리뷰/찜 변경 시 상품의 평균 별점과 카운트 동기화
 def update_product_stats(product_id: int, db: Session):
     product = db.query(models.Product).filter(models.Product.id == product_id).first()
@@ -275,19 +285,30 @@ def create_product(
         # 사이즈 다중 저장
         if sizes:
             sizes_data = json.loads(sizes)
+            cat = db.query(models.Category).filter(models.Category.id == category_id).first()
+            is_top = cat and "상의" in cat.name
+
             for s in sizes_data:
-                new_size = models.ProductSize(
-                    product_id=new_product.id,
-                    size_name=s.get("size_name"),
-                    length=s.get("length"),
-                    chest=s.get("chest"),
-                    sleeve=s.get("sleeve"),
-                    neck=s.get("neck"),
-                    waist=s.get("waist"),
-                    thigh=s.get("thigh"),
-                    rise=s.get("rise"),
-                    hem=s.get("hem")
-                )
+                if is_top:
+                    new_size = models.TopSize(
+                        product_id=new_product.id,
+                        size_name=s.get("size_name"),
+                        length=to_float(s.get("length")),
+                        chest=to_float(s.get("chest")),
+                        shoulder=to_float(s.get("shoulder")),
+                        sleeve=to_float(s.get("sleeve")),
+                        neck=to_float(s.get("neck"))
+                    )
+                else:
+                    new_size = models.BottomSize(
+                        product_id=new_product.id,
+                        size_name=s.get("size_name"),
+                        length=to_float(s.get("length")),
+                        waist=to_float(s.get("waist")),
+                        thigh=to_float(s.get("thigh")),
+                        rise=to_float(s.get("rise")),
+                        hem=to_float(s.get("hem"))
+                    )
                 db.add(new_size)
 
         # 상세 이미지 다중 저장
@@ -328,21 +349,35 @@ def update_product(
     db_product.description = description
     
     if sizes:
-        db.query(models.ProductSize).filter(models.ProductSize.product_id == product_id).delete()
+        # 기존 사이즈 삭제
+        db.query(models.TopSize).filter(models.TopSize.product_id == product_id).delete()
+        db.query(models.BottomSize).filter(models.BottomSize.product_id == product_id).delete()
+        
         sizes_data = json.loads(sizes)
+        cat = db.query(models.Category).filter(models.Category.id == category_id).first()
+        is_top = cat and "상의" in cat.name
+
         for s in sizes_data:
-            new_size = models.ProductSize(
-                product_id=db_product.id,
-                size_name=s.get("size_name"),
-                length=s.get("length"),
-                chest=s.get("chest"),
-                sleeve=s.get("sleeve"),
-                neck=s.get("neck"),
-                waist=s.get("waist"),
-                thigh=s.get("thigh"),
-                rise=s.get("rise"),
-                hem=s.get("hem")
-            )
+            if is_top:
+                new_size = models.TopSize(
+                    product_id=db_product.id,
+                    size_name=s.get("size_name"),
+                    length=to_float(s.get("length")),
+                    chest=to_float(s.get("chest")),
+                    shoulder=to_float(s.get("shoulder")),
+                    sleeve=to_float(s.get("sleeve")),
+                    neck=to_float(s.get("neck"))
+                )
+            else:
+                new_size = models.BottomSize(
+                    product_id=db_product.id,
+                    size_name=s.get("size_name"),
+                    length=to_float(s.get("length")),
+                    waist=to_float(s.get("waist")),
+                    thigh=to_float(s.get("thigh")),
+                    rise=to_float(s.get("rise")),
+                    hem=to_float(s.get("hem"))
+                )
             db.add(new_size)
     
     if image and image.filename:

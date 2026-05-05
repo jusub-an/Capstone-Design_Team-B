@@ -39,29 +39,32 @@ class Product(Base):
     reviews = relationship("Review", back_populates="product", cascade="all, delete-orphan")
     wishes = relationship("Wish", back_populates="product", cascade="all, delete-orphan")
     desc_images = relationship("ProductImage", back_populates="product", cascade="all, delete-orphan")
-    sizes = relationship("ProductSize", back_populates="product", cascade="all, delete-orphan")
+    top_sizes = relationship("TopSize", back_populates="product", cascade="all, delete-orphan")
+    bottom_sizes = relationship("BottomSize", back_populates="product", cascade="all, delete-orphan")
 
-class ProductSize(Base):
-    __tablename__ = "product_sizes"
+class TopSize(Base):
+    __tablename__ = "top_sizes"
     id = Column(Integer, Identity(start=1), primary_key=True)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
     size_name = Column(String(50), nullable=False)
-    
-    # Common
     length = Column(Float, nullable=True)
-    
-    # Top
     chest = Column(Float, nullable=True)
+    shoulder = Column(Float, nullable=True)
     sleeve = Column(Float, nullable=True)
     neck = Column(Float, nullable=True)
-    
-    # Bottom
+    product = relationship("Product", back_populates="top_sizes")
+
+class BottomSize(Base):
+    __tablename__ = "bottom_sizes"
+    id = Column(Integer, Identity(start=1), primary_key=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    size_name = Column(String(50), nullable=False)
+    length = Column(Float, nullable=True)
     waist = Column(Float, nullable=True)
     thigh = Column(Float, nullable=True)
     rise = Column(Float, nullable=True)
     hem = Column(Float, nullable=True)
-
-    product = relationship("Product", back_populates="sizes")
+    product = relationship("Product", back_populates="bottom_sizes")
 
 class ProductImage(Base):
     __tablename__ = "product_images"

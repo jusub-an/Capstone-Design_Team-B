@@ -221,12 +221,23 @@ ${productDetailsText}
   return (
     <div className="vf-page-wrapper">
       <header className="vf-header">
-        <button className="vf-back-btn" onClick={() => navigate(-1)}>
-          <ArrowLeft size={24} />
-          <span>뒤로 가기</span>
-        </button>
-        <h2>가상 피팅룸</h2>
-        <div className="vf-product-id">상품 번호: {id}</div>
+        <div className="vf-header-left">
+          <button className="vf-back-btn" onClick={() => navigate(-1)}>
+            <ArrowLeft size={24} />
+          </button>
+          {productInfo && (
+            <div className="vf-product-info-header">
+              <img 
+                src={`http://localhost:8000${productInfo.image_url}`} 
+                alt={productInfo.name} 
+                className="vf-header-thumb"
+              />
+              <div className="vf-header-details">
+                <span className="vf-header-product-name">{productInfo.name}</span>
+              </div>
+            </div>
+          )}
+        </div>
       </header>
 
       <main className="vf-main-content">

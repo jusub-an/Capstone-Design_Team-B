@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ChevronLeft, ShoppingCart, Heart, Share2, Star, MessageSquare, Plus, Edit2, Trash2 } from 'lucide-react';
+import { ChevronLeft, ShoppingCart, Heart, Share2, Star, MessageSquare, Plus, Edit2, Trash2, ShoppingBag } from 'lucide-react';
+import './ProductList.css';
 import axios from 'axios';
 import './ProductDetail.css';
 
@@ -104,10 +105,19 @@ function ProductDetail() {
   return (
     <div className="product-detail-container">
       <header className="product-header">
-        <div className="logo-section" onClick={() => navigate('/products')} style={{ cursor: 'pointer' }}>
+        <div className="logo-section" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>
           <h2>Virtual Fitting</h2>
         </div>
+
         <div className="header-actions">
+          <button className="action-icon-btn" onClick={() => navigate('/mypage/wishes')}>
+            <Heart size={22} />
+          </button>
+          <button className="action-icon-btn">
+            <ShoppingBag size={22} />
+            <span className="badge">0</span>
+          </button>
+
           {isLoggedIn ? (
             <div className="user-profile-wrapper">
               <div className="user-avatar" title="User Profile">
@@ -116,7 +126,6 @@ function ProductDetail() {
               <div className="dropdown-menu">
                 <ul>
                   <li onClick={() => navigate('/mypage')}>마이페이지</li>
-                  <li onClick={() => navigate('/mypage/body-measure')}>내 아바타</li>
                   <li onClick={handleLogout} className="logout-action">로그아웃</li>
                 </ul>
               </div>
