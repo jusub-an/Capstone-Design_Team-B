@@ -119,3 +119,24 @@ class WishResponse(BaseModel):
     product: ProductResponse
     class Config:
         from_attributes = True
+
+class SizeReviewImageResponse(BaseModel):
+    id: int
+    image_url: str
+    class Config:
+        from_attributes = True
+
+class SizeReviewResponse(BaseModel):
+    id: int
+    product_id: int
+    user_email: str
+    size_name: str
+    length: float | None = None
+    chest_or_waist: float | None = None
+    shoulder_or_thigh: float | None = None
+    sleeve_or_rise: float | None = None
+    neck_or_hem: float | None = None
+    created_at: Any | None = None
+    images: list[SizeReviewImageResponse] = []
+    class Config:
+        from_attributes = True

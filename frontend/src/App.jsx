@@ -11,6 +11,7 @@ import Wishlist from './pages/Wishlist';
 import MyReviews from './pages/MyReviews';
 import BodyMeasure from './pages/BodyMeasure';
 import VirtualFitting from './pages/VirtualFitting';
+import SizeReviewRegister from './pages/SizeReviewRegister';
 
 
 function App() {
@@ -37,6 +38,7 @@ function App() {
           <Route path="/mypage/body-measure" element={<BodyMeasure />} />
           <Route path="/mypage/wishes" element={<Wishlist />} />
           <Route path="/mypage/reviews" element={<MyReviews />} />
+          <Route path="/size-reviews/new/:productId" element={<SizeReviewRegister />} />
         </Routes>
       </div>
     </Router>

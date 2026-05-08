@@ -1,5 +1,5 @@
 from typing import List, Optional
-from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Form
+from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Form, Query
 from starlette.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -78,6 +78,8 @@ def seed_data():
 # 이미지 업로드 설정 및 정적 파일 서빙
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+SIZE_REVIEW_DIR = os.path.join(UPLOAD_DIR, "size_review_image")
+os.makedirs(SIZE_REVIEW_DIR, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 # CORS 설정: React 프론트엔드 도메인 허용
@@ -547,3 +549,101 @@ def get_categories(db: Session = Depends(get_db)):
 @app.get("/api/products/user/{email}", response_model=list[schemas.ProductResponse])
 def get_user_products(email: str, db: Session = Depends(get_db)):
     return db.query(models.Product).filter(models.Product.owner_email == email).order_by(models.Product.id.desc()).all()
+
+# --- 사이즈 후기 (Size Review) ---
+
+@app.post("/api/size-reviews", response_model=schemas.SizeReviewResponse)
+async def create_size_review(
+    product_id: int = Form(...),
+    user_email: str = Form(...),
+    size_name: str = Form(...),
+    length: Optional[float] = Form(None),
+    chest_or_waist: Optional[float] = Form(None),
+    shoulder_or_thigh: Optional[float] = Form(None),
+    sleeve_or_rise: Optional[float] = Form(None),
+    neck_or_hem: Optional[float] = Form(None),
+    debug_image: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    try:
+        existing_review = db.query(models.SizeReview).filter(
+            models.SizeReview.product_id == product_id,
+            models.SizeReview.user_email == user_email
+        ).first()
+
+        if existing_review:
+            # 기존 리뷰 수정
+            existing_review.size_name = size_name
+            existing_review.length = length
+            existing_review.chest_or_waist = chest_or_waist
+            existing_review.shoulder_or_thigh = shoulder_or_thigh
+            existing_review.sleeve_or_rise = sleeve_or_rise
+            existing_review.neck_or_hem = neck_or_hem
+
+            # 기존 이미지 파일 삭제
+            for img in existing_review.images:
+                file_path = os.path.join(SIZE_REVIEW_DIR, os.path.basename(img.image_url))
+                if os.path.exists(file_path):
+                    try: os.remove(file_path)
+                    except: pass
+                db.delete(img)
+            
+            new_review = existing_review
+        else:
+            # 새 리뷰 생성
+            new_review = models.SizeReview(
+                product_id=product_id,
+                user_email=user_email,
+                size_name=size_name,
+                length=length,
+                chest_or_waist=chest_or_waist,
+                shoulder_or_thigh=shoulder_or_thigh,
+                sleeve_or_rise=sleeve_or_rise,
+                neck_or_hem=neck_or_hem
+            )
+            db.add(new_review)
+        
+        db.flush()
+
+        # 디버그 이미지 저장 (최종 결과 이미지)
+        file_ext = debug_image.filename.split(".")[-1]
+        unique_filename = f"sr_{uuid.uuid4().hex}.{file_ext}"
+        save_path = os.path.join(SIZE_REVIEW_DIR, unique_filename)
+        
+        with open(save_path, "wb") as buffer:
+            shutil.copyfileobj(debug_image.file, buffer)
+        
+        image_url = f"/uploads/size_review_image/{unique_filename}"
+        new_img = models.SizeReviewImage(size_review_id=new_review.id, image_url=image_url)
+        db.add(new_img)
+        
+        db.commit()
+        db.refresh(new_review)
+        return new_review
+    except Exception as e:
+        db.rollback()
+        print(f"Error creating size review: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/products/{product_id}/size-reviews", response_model=list[schemas.SizeReviewResponse])
+def get_product_size_reviews(product_id: int, db: Session = Depends(get_db)):
+    return db.query(models.SizeReview).options(joinedload(models.SizeReview.images)).filter(models.SizeReview.product_id == product_id).order_by(models.SizeReview.created_at.desc()).all()
+
+@app.delete("/api/size-reviews/{review_id}")
+def delete_size_review(review_id: int, user_email: str = Query(...), db: Session = Depends(get_db)):
+    review = db.query(models.SizeReview).filter(models.SizeReview.id == review_id, models.SizeReview.user_email == user_email).first()
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found or unauthorized")
+    
+    # 실제 서버에 저장된 이미지 파일 삭제 처리
+    for img in review.images:
+        file_path = os.path.join(SIZE_REVIEW_DIR, os.path.basename(img.image_url))
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except Exception as e:
+                print(f"Failed to delete image {file_path}: {e}")
+            
+    db.delete(review)
+    db.commit()
+    return {"message": "Deleted successfully"}
