@@ -1,5 +1,5 @@
 from typing import List, Optional
-from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Form
+from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Form, Query
 from starlette.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -53,17 +53,19 @@ def auto_migrate_db():
         raise RuntimeError("DB engine not initialized")
     with engine.connect() as conn:
         try:
-            conn.execute(text("SELECT waist FROM product_sizes WHERE 1=0"))
+            # Check if product_sizes exists and drop it if it does
+            conn.execute(text("DROP TABLE product_sizes"))
+            conn.commit()
+            print("Dropped old product_sizes table.")
         except Exception:
-            try:
-                conn.execute(text("ALTER TABLE product_sizes ADD waist FLOAT"))
-                conn.execute(text("ALTER TABLE product_sizes ADD thigh FLOAT"))
-                conn.execute(text("ALTER TABLE product_sizes ADD rise FLOAT"))
-                conn.execute(text("ALTER TABLE product_sizes ADD hem FLOAT"))
-                conn.commit()
-                print("DB auto-migration completed: added bottom columns to product_sizes.")
-            except Exception as e:
-                print(f"DB auto-migration failed: {e}")
+            pass
+        
+        # Ensure new tables are created
+        try:
+            models.Base.metadata.create_all(bind=engine)
+            print("DB auto-migration completed: created top_sizes and bottom_sizes tables.")
+        except Exception as e:
+            print(f"DB auto-migration failed: {e}")
 
 def seed_data():
     from database import SessionLocal
@@ -84,6 +86,8 @@ def seed_data():
 # 이미지 업로드 설정 및 정적 파일 서빙
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+SIZE_REVIEW_DIR = os.path.join(UPLOAD_DIR, "size_review_image")
+os.makedirs(SIZE_REVIEW_DIR, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 # CORS 설정: React 프론트엔드 도메인 허용
@@ -167,6 +171,7 @@ async def measure_body(
         "debug_image_base64":      _encode(result["debug_image"]),
         "person_extracted_base64": _encode(result["person_extracted"]),
         "gray_mask_base64":        _encode(result["gray_mask"]),
+        "gray_debug_image_base64": _encode(result["gray_debug_image"]),
     }
 
 # --- 의류 치수 측정 엔드포인트 ---
@@ -219,6 +224,14 @@ async def measure_clothing(
 
 
 # --- 상품 및 통계 관리 ---
+
+def to_float(val):
+    if val is None or (isinstance(val, str) and val.strip() == ''):
+        return None
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return None
 
 # 리뷰/찜 변경 시 상품의 평균 별점과 카운트 동기화
 def update_product_stats(product_id: int, db: Session):
@@ -283,19 +296,30 @@ def create_product(
         # 사이즈 다중 저장
         if sizes:
             sizes_data = json.loads(sizes)
+            cat = db.query(models.Category).filter(models.Category.id == category_id).first()
+            is_top = cat and "상의" in cat.name
+
             for s in sizes_data:
-                new_size = models.ProductSize(
-                    product_id=new_product.id,
-                    size_name=s.get("size_name"),
-                    length=s.get("length"),
-                    chest=s.get("chest"),
-                    sleeve=s.get("sleeve"),
-                    neck=s.get("neck"),
-                    waist=s.get("waist"),
-                    thigh=s.get("thigh"),
-                    rise=s.get("rise"),
-                    hem=s.get("hem")
-                )
+                if is_top:
+                    new_size = models.TopSize(
+                        product_id=new_product.id,
+                        size_name=s.get("size_name"),
+                        length=to_float(s.get("length")),
+                        chest=to_float(s.get("chest")),
+                        shoulder=to_float(s.get("shoulder")),
+                        sleeve=to_float(s.get("sleeve")),
+                        neck=to_float(s.get("neck"))
+                    )
+                else:
+                    new_size = models.BottomSize(
+                        product_id=new_product.id,
+                        size_name=s.get("size_name"),
+                        length=to_float(s.get("length")),
+                        waist=to_float(s.get("waist")),
+                        thigh=to_float(s.get("thigh")),
+                        rise=to_float(s.get("rise")),
+                        hem=to_float(s.get("hem"))
+                    )
                 db.add(new_size)
 
         # 상세 이미지 다중 저장
@@ -336,21 +360,35 @@ def update_product(
     db_product.description = description
     
     if sizes:
-        db.query(models.ProductSize).filter(models.ProductSize.product_id == product_id).delete()
+        # 기존 사이즈 삭제
+        db.query(models.TopSize).filter(models.TopSize.product_id == product_id).delete()
+        db.query(models.BottomSize).filter(models.BottomSize.product_id == product_id).delete()
+        
         sizes_data = json.loads(sizes)
+        cat = db.query(models.Category).filter(models.Category.id == category_id).first()
+        is_top = cat and "상의" in cat.name
+
         for s in sizes_data:
-            new_size = models.ProductSize(
-                product_id=db_product.id,
-                size_name=s.get("size_name"),
-                length=s.get("length"),
-                chest=s.get("chest"),
-                sleeve=s.get("sleeve"),
-                neck=s.get("neck"),
-                waist=s.get("waist"),
-                thigh=s.get("thigh"),
-                rise=s.get("rise"),
-                hem=s.get("hem")
-            )
+            if is_top:
+                new_size = models.TopSize(
+                    product_id=db_product.id,
+                    size_name=s.get("size_name"),
+                    length=to_float(s.get("length")),
+                    chest=to_float(s.get("chest")),
+                    shoulder=to_float(s.get("shoulder")),
+                    sleeve=to_float(s.get("sleeve")),
+                    neck=to_float(s.get("neck"))
+                )
+            else:
+                new_size = models.BottomSize(
+                    product_id=db_product.id,
+                    size_name=s.get("size_name"),
+                    length=to_float(s.get("length")),
+                    waist=to_float(s.get("waist")),
+                    thigh=to_float(s.get("thigh")),
+                    rise=to_float(s.get("rise")),
+                    hem=to_float(s.get("hem"))
+                )
             db.add(new_size)
     
     if image and image.filename:
@@ -519,3 +557,101 @@ def get_categories(db: Session = Depends(get_db)):
 @app.get("/api/products/user/{email}", response_model=list[schemas.ProductResponse])
 def get_user_products(email: str, db: Session = Depends(get_db)):
     return db.query(models.Product).filter(models.Product.owner_email == email).order_by(models.Product.id.desc()).all()
+
+# --- 사이즈 후기 (Size Review) ---
+
+@app.post("/api/size-reviews", response_model=schemas.SizeReviewResponse)
+async def create_size_review(
+    product_id: int = Form(...),
+    user_email: str = Form(...),
+    size_name: str = Form(...),
+    length: Optional[float] = Form(None),
+    chest_or_waist: Optional[float] = Form(None),
+    shoulder_or_thigh: Optional[float] = Form(None),
+    sleeve_or_rise: Optional[float] = Form(None),
+    neck_or_hem: Optional[float] = Form(None),
+    debug_image: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    try:
+        existing_review = db.query(models.SizeReview).filter(
+            models.SizeReview.product_id == product_id,
+            models.SizeReview.user_email == user_email
+        ).first()
+
+        if existing_review:
+            # 기존 리뷰 수정
+            existing_review.size_name = size_name
+            existing_review.length = length
+            existing_review.chest_or_waist = chest_or_waist
+            existing_review.shoulder_or_thigh = shoulder_or_thigh
+            existing_review.sleeve_or_rise = sleeve_or_rise
+            existing_review.neck_or_hem = neck_or_hem
+
+            # 기존 이미지 파일 삭제
+            for img in existing_review.images:
+                file_path = os.path.join(SIZE_REVIEW_DIR, os.path.basename(img.image_url))
+                if os.path.exists(file_path):
+                    try: os.remove(file_path)
+                    except: pass
+                db.delete(img)
+            
+            new_review = existing_review
+        else:
+            # 새 리뷰 생성
+            new_review = models.SizeReview(
+                product_id=product_id,
+                user_email=user_email,
+                size_name=size_name,
+                length=length,
+                chest_or_waist=chest_or_waist,
+                shoulder_or_thigh=shoulder_or_thigh,
+                sleeve_or_rise=sleeve_or_rise,
+                neck_or_hem=neck_or_hem
+            )
+            db.add(new_review)
+        
+        db.flush()
+
+        # 디버그 이미지 저장 (최종 결과 이미지)
+        file_ext = debug_image.filename.split(".")[-1]
+        unique_filename = f"sr_{uuid.uuid4().hex}.{file_ext}"
+        save_path = os.path.join(SIZE_REVIEW_DIR, unique_filename)
+        
+        with open(save_path, "wb") as buffer:
+            shutil.copyfileobj(debug_image.file, buffer)
+        
+        image_url = f"/uploads/size_review_image/{unique_filename}"
+        new_img = models.SizeReviewImage(size_review_id=new_review.id, image_url=image_url)
+        db.add(new_img)
+        
+        db.commit()
+        db.refresh(new_review)
+        return new_review
+    except Exception as e:
+        db.rollback()
+        print(f"Error creating size review: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/products/{product_id}/size-reviews", response_model=list[schemas.SizeReviewResponse])
+def get_product_size_reviews(product_id: int, db: Session = Depends(get_db)):
+    return db.query(models.SizeReview).options(joinedload(models.SizeReview.images)).filter(models.SizeReview.product_id == product_id).order_by(models.SizeReview.created_at.desc()).all()
+
+@app.delete("/api/size-reviews/{review_id}")
+def delete_size_review(review_id: int, user_email: str = Query(...), db: Session = Depends(get_db)):
+    review = db.query(models.SizeReview).filter(models.SizeReview.id == review_id, models.SizeReview.user_email == user_email).first()
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found or unauthorized")
+    
+    # 실제 서버에 저장된 이미지 파일 삭제 처리
+    for img in review.images:
+        file_path = os.path.join(SIZE_REVIEW_DIR, os.path.basename(img.image_url))
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except Exception as e:
+                print(f"Failed to delete image {file_path}: {e}")
+            
+    db.delete(review)
+    db.commit()
+    return {"message": "Deleted successfully"}

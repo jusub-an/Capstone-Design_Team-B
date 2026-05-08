@@ -39,29 +39,32 @@ class Product(Base):
     reviews = relationship("Review", back_populates="product", cascade="all, delete-orphan")
     wishes = relationship("Wish", back_populates="product", cascade="all, delete-orphan")
     desc_images = relationship("ProductImage", back_populates="product", cascade="all, delete-orphan")
-    sizes = relationship("ProductSize", back_populates="product", cascade="all, delete-orphan")
+    top_sizes = relationship("TopSize", back_populates="product", cascade="all, delete-orphan")
+    bottom_sizes = relationship("BottomSize", back_populates="product", cascade="all, delete-orphan")
 
-class ProductSize(Base):
-    __tablename__ = "product_sizes"
+class TopSize(Base):
+    __tablename__ = "top_sizes"
     id = Column(Integer, Identity(start=1), primary_key=True)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
     size_name = Column(String(50), nullable=False)
-    
-    # Common
     length = Column(Float, nullable=True)
-    
-    # Top
     chest = Column(Float, nullable=True)
+    shoulder = Column(Float, nullable=True)
     sleeve = Column(Float, nullable=True)
     neck = Column(Float, nullable=True)
-    
-    # Bottom
+    product = relationship("Product", back_populates="top_sizes")
+
+class BottomSize(Base):
+    __tablename__ = "bottom_sizes"
+    id = Column(Integer, Identity(start=1), primary_key=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    size_name = Column(String(50), nullable=False)
+    length = Column(Float, nullable=True)
     waist = Column(Float, nullable=True)
     thigh = Column(Float, nullable=True)
     rise = Column(Float, nullable=True)
     hem = Column(Float, nullable=True)
-
-    product = relationship("Product", back_populates="sizes")
+    product = relationship("Product", back_populates="bottom_sizes")
 
 class ProductImage(Base):
     __tablename__ = "product_images"
@@ -99,3 +102,30 @@ class Wish(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     product = relationship("Product", back_populates="wishes")
     user = relationship("User")
+
+class SizeReview(Base):
+    __tablename__ = "size_review"
+    id = Column(Integer, Identity(start=1), primary_key=True)
+    product_id = Column(Integer, ForeignKey("products.id", ondelete="CASCADE"), nullable=False)
+    user_email = Column(String(100), ForeignKey("users.email"), nullable=False)
+    size_name = Column(String(50), nullable=False)  # 선택한 사이즈 명칭 (예: S, M, L)
+    
+    # 상의/하의 공통 또는 개별 치수 (최대 5개 항목)
+    length = Column(Float, nullable=True)
+    chest_or_waist = Column(Float, nullable=True)  # 상의: 가슴, 하의: 허리
+    shoulder_or_thigh = Column(Float, nullable=True) # 상의: 어깨, 하의: 허벅지
+    sleeve_or_rise = Column(Float, nullable=True)  # 상의: 소매, 하의: 밑위
+    neck_or_hem = Column(Float, nullable=True)    # 상의: 넥라인, 하의: 밑단
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    product = relationship("Product")
+    images = relationship("SizeReviewImage", back_populates="size_review", cascade="all, delete-orphan")
+
+class SizeReviewImage(Base):
+    __tablename__ = "size_review_image"
+    id = Column(Integer, Identity(start=1), primary_key=True)
+    size_review_id = Column(Integer, ForeignKey("size_review.id", ondelete="CASCADE"), nullable=False)
+    image_url = Column(String(500), nullable=False)
+    
+    size_review = relationship("SizeReview", back_populates="images")

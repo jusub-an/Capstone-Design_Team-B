@@ -1,12 +1,14 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronRight, Package, User, MessageSquareMore, Settings, LogOut, Heart } from 'lucide-react';
+import { ChevronRight, Package, User, MessageSquareMore, Settings, LogOut, Heart, Search, ShoppingBag } from 'lucide-react';
 import './ProductList.css'; // Reusing some header styles
 
 function MyPage() {
   const navigate = useNavigate();
+  const [searchQuery, setSearchQuery] = useState('');
   const username = sessionStorage.getItem('username') || 'User';
   const email = sessionStorage.getItem('userEmail') || 'No Email';
+  const isLoggedIn = !!sessionStorage.getItem('token');
 
   const handleLogout = () => {
     sessionStorage.removeItem('token');
@@ -25,15 +27,35 @@ function MyPage() {
   return (
     <div className="product-list-container">
       <header className="product-header">
-        <div className="logo-section" onClick={() => navigate('/products')} style={{ cursor: 'pointer' }}>
+        <div className="logo-section" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>
           <h2>Virtual Fitting</h2>
         </div>
+
+
         <div className="header-actions">
-          <div className="user-profile-wrapper">
-            <div className="user-avatar">
-              {username.charAt(0).toUpperCase()}
+          <button className="action-icon-btn" onClick={() => navigate('/mypage/wishes')}>
+            <Heart size={22} />
+          </button>
+          <button className="action-icon-btn">
+            <ShoppingBag size={22} />
+            <span className="badge">0</span>
+          </button>
+
+          {isLoggedIn ? (
+            <div className="user-profile-wrapper">
+              <div className="user-avatar" title="User Profile">
+                {username.charAt(0).toUpperCase()}
+              </div>
+              <div className="dropdown-menu">
+                <ul>
+                  <li onClick={() => navigate('/mypage')}>마이페이지</li>
+                  <li onClick={handleLogout} className="logout-action">로그아웃</li>
+                </ul>
+              </div>
             </div>
-          </div>
+          ) : (
+            <button className="login-header-button" onClick={() => navigate('/login')}>로그인</button>
+          )}
         </div>
       </header>
 
@@ -69,8 +91,6 @@ function MyPage() {
             <p style={{ margin: '5px 0 0', color: '#666' }}>{email}</p>
           </div>
         </div>
-
-        <h3 className="section-title">마이페이지</h3>
 
         <div className="mypage-menu-grid" style={{ display: 'grid', gap: '15px' }}>
           {menuItems.map((item, idx) => (

@@ -26,27 +26,27 @@ function VirtualFitting() {
           setProductInfo(prodData);
 
           const base64Images = [];
-          
+
           // 메인 이미지 변환 추가
           if (prodData.image_url) {
-             try {
-               const mainImgUrl = `http://localhost:8000${prodData.image_url}`;
-               const base64 = await getBase64ImageFromUrl(mainImgUrl);
-               base64Images.push(base64);
-             } catch (e) {
-               console.error("메인 이미지 변환 실패:", e);
-             }
+            try {
+              const mainImgUrl = `http://localhost:8000${prodData.image_url}`;
+              const base64 = await getBase64ImageFromUrl(mainImgUrl);
+              base64Images.push(base64);
+            } catch (e) {
+              console.error("메인 이미지 변환 실패:", e);
+            }
           }
 
           if (prodData.desc_images) {
             for (let img of prodData.desc_images) {
-               const imgUrl = `http://localhost:8000${img.image_url}`;
-               try {
-                 const base64 = await getBase64ImageFromUrl(imgUrl);
-                 base64Images.push(base64);
-               } catch (e) {
-                 console.error("상세 이미지 변환 실패:", e);
-               }
+              const imgUrl = `http://localhost:8000${img.image_url}`;
+              try {
+                const base64 = await getBase64ImageFromUrl(imgUrl);
+                base64Images.push(base64);
+              } catch (e) {
+                console.error("상세 이미지 변환 실패:", e);
+              }
             }
           }
           setProductImages(base64Images);
@@ -58,7 +58,7 @@ function VirtualFitting() {
           const revData = await revRes.json();
           setProductReviews(revData);
         }
-      } catch(err) {
+      } catch (err) {
         console.error('상품 정보 불러오기 실패:', err);
       }
     };
@@ -74,7 +74,7 @@ function VirtualFitting() {
         const MAX_DIM = 1024; // 이미지 크기를 줄여서 API 페이로드 초과 방지
         let width = img.width;
         let height = img.height;
-        
+
         if (width > height && width > MAX_DIM) {
           height *= MAX_DIM / width;
           width = MAX_DIM;
@@ -82,18 +82,18 @@ function VirtualFitting() {
           width *= MAX_DIM / height;
           height = MAX_DIM;
         }
-        
+
         canvas.width = width;
         canvas.height = height;
         const ctx = canvas.getContext('2d');
         ctx.fillStyle = "#ffffff"; // 투명 배경을 흰색으로
         ctx.fillRect(0, 0, width, height);
         ctx.drawImage(img, 0, 0, width, height);
-        
+
         // JPEG로 압축하여 base64 크기 최소화
         resolve(canvas.toDataURL('image/jpeg', 0.8));
       };
-      
+
       img.onerror = () => {
         // img 로드 실패 시 fetch 방식 폴백
         fetch(imageUrl)
@@ -106,7 +106,7 @@ function VirtualFitting() {
           })
           .catch(reject);
       };
-      
+
       // 캐시 방지 처리
       img.src = imageUrl + "?t=" + new Date().getTime();
     });
@@ -119,7 +119,7 @@ function VirtualFitting() {
       alert("OpenRouter API Key를 입력해주세요.");
       return;
     }
-    
+
     const userMessageText = inputMsg;
     const newMessages = [...messages, { sender: 'user', text: userMessageText }];
     setMessages(newMessages);
@@ -165,7 +165,7 @@ ${productDetailsText}
       const apiMessages = [
         { role: 'system', content: systemPrompt },
       ];
-      
+
       const history = newMessages.map(m => ({
         role: m.sender === 'user' ? 'user' : 'assistant',
         content: m.text
@@ -197,20 +197,20 @@ ${productDetailsText}
           temperature: 0.1 // 정보의 정확성을 위해 낮은 temperature 설정
         })
       })
-      .then(res => {
-        if (!res.ok) throw new Error("API 요청 실패");
-        return res.json();
-      })
-      .then(data => {
-        const botResponse = data.choices[0].message.content;
-        setMessages(prev => [...prev, { sender: 'bot', text: botResponse }]);
-        setIsTyping(false);
-      })
-      .catch(error => {
-        console.error(error);
-        setMessages(prev => [...prev, { sender: 'bot', text: '죄송합니다. 오류가 발생했습니다. API 키가 유효한지 확인해주세요.' }]);
-        setIsTyping(false);
-      });
+        .then(res => {
+          if (!res.ok) throw new Error("API 요청 실패");
+          return res.json();
+        })
+        .then(data => {
+          const botResponse = data.choices[0].message.content;
+          setMessages(prev => [...prev, { sender: 'bot', text: botResponse }]);
+          setIsTyping(false);
+        })
+        .catch(error => {
+          console.error(error);
+          setMessages(prev => [...prev, { sender: 'bot', text: '죄송합니다. 오류가 발생했습니다. API 키가 유효한지 확인해주세요.' }]);
+          setIsTyping(false);
+        });
 
     } catch (error) {
       console.error(error);
@@ -221,12 +221,23 @@ ${productDetailsText}
   return (
     <div className="vf-page-wrapper">
       <header className="vf-header">
-        <button className="vf-back-btn" onClick={() => navigate(-1)}>
-          <ArrowLeft size={24} />
-          <span>뒤로 가기</span>
-        </button>
-        <h2>가상 피팅룸</h2>
-        <div className="vf-product-id">상품 번호: {id}</div>
+        <div className="vf-header-left">
+          <button className="vf-back-btn" onClick={() => navigate(-1)}>
+            <ArrowLeft size={24} />
+          </button>
+          {productInfo && (
+            <div className="vf-product-info-header">
+              <img
+                src={`http://localhost:8000${productInfo.image_url}`}
+                alt={productInfo.name}
+                className="vf-header-thumb"
+              />
+              <div className="vf-header-details">
+                <span className="vf-header-product-name">{productInfo.name}</span>
+              </div>
+            </div>
+          )}
+        </div>
       </header>
 
       <main className="vf-main-content">
@@ -236,7 +247,7 @@ ${productDetailsText}
             <Sparkles className="vf-icon" />
             <h3>2D 가상 피팅 시뮬레이션</h3>
           </div>
-          
+
           <div className="vf-canvas-container">
             {/* 시각화 캔버스 자리표시자 */}
             <div className="vf-mock-canvas">
@@ -262,10 +273,10 @@ ${productDetailsText}
             </div>
             <div className="vf-api-key-container">
               <Key size={14} className="vf-api-key-icon" />
-              <input 
-                type="password" 
-                placeholder="OpenRouter API Key 입력" 
-                value={apiKey} 
+              <input
+                type="password"
+                placeholder="OpenRouter API Key 입력"
+                value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 className="vf-api-key-input"
               />
@@ -300,8 +311,8 @@ ${productDetailsText}
 
             <form className="vf-chat-input-area" onSubmit={handleSendMessage}>
               <div className="vf-input-wrapper">
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   placeholder="예: 어깨가 많이 낄까요? 총기장은 어디까지 오나요?"
                   value={inputMsg}
                   onChange={(e) => setInputMsg(e.target.value)}

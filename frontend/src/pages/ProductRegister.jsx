@@ -20,7 +20,7 @@ function ProductRegister() {
   });
 
   const [sizes, setSizes] = useState([
-    { id: Date.now(), size_name: 'Free', length: '', chest: '', sleeve: '', neck: '', waist: '', thigh: '', rise: '', hem: '' }
+    { id: Date.now(), size_name: 'Free', length: '', chest: '', shoulder: '', sleeve: '', neck: '', waist: '', thigh: '', rise: '', hem: '' }
   ]);
   const [activeSizeId, setActiveSizeId] = useState(null);
 
@@ -86,10 +86,16 @@ function ProductRegister() {
           brand: data.brand || '',
           price: data.price
         });
-        if (data.sizes && data.sizes.length > 0) {
-          setSizes(data.sizes.map(s => ({ ...s, id: Math.random() })));
+        const productSizes = (data.top_sizes && data.top_sizes.length > 0) 
+          ? data.top_sizes 
+          : (data.bottom_sizes && data.bottom_sizes.length > 0) 
+            ? data.bottom_sizes 
+            : [];
+
+        if (productSizes.length > 0) {
+          setSizes(productSizes.map(s => ({ ...s, id: Math.random() })));
         } else {
-          setSizes([{ id: Date.now(), size_name: 'Free', length: '', chest: '', sleeve: '', neck: '', waist: '', thigh: '', rise: '', hem: '' }]);
+          setSizes([{ id: Date.now(), size_name: 'Free', length: '', chest: '', shoulder: '', sleeve: '', neck: '', waist: '', thigh: '', rise: '', hem: '' }]);
         }
       }
     } catch (error) {
@@ -676,7 +682,7 @@ function ProductRegister() {
               <button 
                 type="button" 
                 className="add-size-btn"
-                onClick={() => setSizes(prev => [...prev, { id: Date.now(), size_name: '', length: '', chest: '', sleeve: '', neck: '', waist: '', thigh: '', rise: '', hem: '' }])}
+                onClick={() => setSizes(prev => [...prev, { id: Date.now(), size_name: '', length: '', chest: '', shoulder: '', sleeve: '', neck: '', waist: '', thigh: '', rise: '', hem: '' }])}
               >
                 + 사이즈 추가
               </button>
@@ -727,11 +733,15 @@ function ProductRegister() {
                     {formData.category_type === 'Top' ? (
                       <>
                         <div className="m-input">
+                          <span>어깨너비</span>
+                          <input type="number" step="0.1" value={size.shoulder || ''} onChange={(e) => setSizes(prev => prev.map(s => s.id === size.id ? {...s, shoulder: e.target.value} : s))} placeholder="0.0" />
+                        </div>
+                        <div className="m-input">
                           <span>가슴단면</span>
                           <input type="number" step="0.1" value={size.chest || ''} onChange={(e) => setSizes(prev => prev.map(s => s.id === size.id ? {...s, chest: e.target.value} : s))} placeholder="0.0" />
                         </div>
                         <div className="m-input">
-                          <span>소매끝단면</span>
+                          <span>소매길이</span>
                           <input type="number" step="0.1" value={size.sleeve || ''} onChange={(e) => setSizes(prev => prev.map(s => s.id === size.id ? {...s, sleeve: e.target.value} : s))} placeholder="0.0" />
                         </div>
                         <div className="m-input">

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Mail, Lock, LogIn, Loader2 } from 'lucide-react';
 import axios from 'axios';
@@ -6,9 +6,18 @@ import axios from 'axios';
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const savedEmail = localStorage.getItem('rememberedEmail');
+    if (savedEmail) {
+      setEmail(savedEmail);
+      setRememberMe(true);
+    }
+  }, []);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -24,6 +33,13 @@ export default function Login() {
       sessionStorage.setItem('token', response.data.access_token);
       sessionStorage.setItem('username', response.data.username);
       sessionStorage.setItem('userEmail', response.data.email);
+
+      if (rememberMe) {
+        localStorage.setItem('rememberedEmail', email);
+      } else {
+        localStorage.removeItem('rememberedEmail');
+      }
+
       navigate('/products');
     } catch (err) {
       setError(err.response?.data?.detail || '로그인에 실패했습니다. 이메일과 비밀번호를 확인해주세요.');
@@ -70,6 +86,23 @@ export default function Login() {
               required
             />
           </div>
+        </div>
+        <div className="auth-options">
+          <label className="remember-me">
+            <input
+              type="checkbox"
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
+            />
+            <span>아이디 저장</span>
+          </label>
+          <button
+            type="button"
+            className="forgot-password"
+            onClick={() => alert('비밀번호 찾기 기능은 현재 준비 중입니다. 관리자에게 문의해주세요.')}
+          >
+            비밀번호 찾기
+          </button>
         </div>
 
         <button type="submit" className="auth-button" disabled={loading}>
