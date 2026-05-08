@@ -19,6 +19,7 @@ function SizeReviewRegister() {
   const [cvImage, setCvImage] = useState(null);
   const [rectShirt, setRectShirt] = useState(null);
   const [rectA4, setRectA4] = useState(null);
+  const [shoulderPts, setShoulderPts] = useState([]);
   const [currentRect, setCurrentRect] = useState(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
@@ -78,8 +79,9 @@ function SizeReviewRegister() {
           setCvStep(1);
           setRectShirt(null);
           setRectA4(null);
+          setShoulderPts([]);
           setCurrentRect(null);
-          redrawCanvas(w, h, scale, null, null, null);
+          redrawCanvas(w, h, scale, null, null, null, []);
         };
         img.src = event.target.result;
       };
@@ -87,7 +89,7 @@ function SizeReviewRegister() {
     }
   };
 
-  const redrawCanvas = (w, h, scale, rs, ra, cr) => {
+  const redrawCanvas = (w, h, scale, rs, ra, cr, sPts = []) => {
     const canvas = canvasRef.current;
     if (!canvas || !imgRef.current) return;
     const ctx = canvas.getContext('2d');
@@ -109,6 +111,26 @@ function SizeReviewRegister() {
     if (rs) drawRect(rs, "#ff4444", "의류 (Shirt)");
     if (ra) drawRect(ra, "#4CAF50", "A4 용지");
     
+    if (sPts && sPts.length > 0) {
+      sPts.forEach((pt, idx) => {
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, 6, 0, 2 * Math.PI);
+        ctx.fillStyle = "#ffeb3b";
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = "#000";
+        ctx.stroke();
+      });
+      if (sPts.length === 2) {
+        ctx.beginPath();
+        ctx.moveTo(sPts[0].x, sPts[0].y);
+        ctx.lineTo(sPts[1].x, sPts[1].y);
+        ctx.strokeStyle = "#ffeb3b";
+        ctx.lineWidth = 3;
+        ctx.stroke();
+      }
+    }
+
     if (cr) {
       let color = cvStep === 1 ? "#ff4444" : "#4CAF50";
       ctx.strokeStyle = color;
@@ -131,8 +153,19 @@ function SizeReviewRegister() {
   };
 
   const onDown = (e) => {
-    if (cvStep !== 1 && cvStep !== 2) return;
     const pos = getPos(e);
+    const isTopItem = product?.category?.name.includes('상의');
+    if (cvStep === 3 && isTopItem) {
+      const newPts = [...shoulderPts, pos];
+      setShoulderPts(newPts);
+      redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, rectShirt, rectA4, null, newPts);
+      if (newPts.length === 2) {
+        setTimeout(() => setCvStep(4), 300);
+      }
+      return;
+    }
+
+    if (cvStep !== 1 && cvStep !== 2) return;
     setStartPos(pos);
     setIsDrawing(true);
     setCurrentRect({ x: pos.x, y: pos.y, w: 0, h: 0 });
@@ -148,24 +181,30 @@ function SizeReviewRegister() {
       h: Math.abs(pos.y - startPos.y)
     };
     setCurrentRect(newRect);
-    redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, rectShirt, rectA4, newRect);
+    redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, rectShirt, rectA4, newRect, shoulderPts);
   };
 
   const onUp = () => {
     if (!isDrawing) return;
     setIsDrawing(false);
+    const isTopItem = product?.category?.name.includes('상의');
     if (currentRect && currentRect.w > 30 && currentRect.h > 30) {
       if (cvStep === 1) {
         setRectShirt({ ...currentRect });
         setCvStep(2);
-        redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, currentRect, rectA4, null);
+        redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, currentRect, rectA4, null, shoulderPts);
       } else if (cvStep === 2) {
         setRectA4({ ...currentRect });
-        setCvStep(3);
-        redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, rectShirt, currentRect, null);
+        if (isTopItem) {
+          setCvStep(3);
+          setShoulderPts([]);
+        } else {
+          setCvStep(4);
+        }
+        redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, rectShirt, currentRect, null, shoulderPts);
       }
     } else {
-      redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, rectShirt, rectA4, null);
+      redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, rectShirt, rectA4, null, shoulderPts);
     }
     setCurrentRect(null);
   };
@@ -207,6 +246,13 @@ function SizeReviewRegister() {
       const category_type = product?.category?.name.includes('상의') ? 'Top' : 'Bottom';
       reqFormData.append('category_type', category_type);
 
+      if (category_type === 'Top' && shoulderPts.length === 2) {
+        reqFormData.append('shoulder_x1', shoulderPts[0].x.toString());
+        reqFormData.append('shoulder_y1', shoulderPts[0].y.toString());
+        reqFormData.append('shoulder_x2', shoulderPts[1].x.toString());
+        reqFormData.append('shoulder_y2', shoulderPts[1].y.toString());
+      }
+
       const response = await fetch('http://localhost:8000/api/measure/clothing', {
         method: 'POST',
         body: reqFormData,
@@ -215,7 +261,7 @@ function SizeReviewRegister() {
       if (response.ok) {
         const data = await response.json();
         setCvResultData(data);
-        setCvStep(4);
+        setCvStep(5);
         setMeasurementWarnings(validateMeasurements(data, category_type).warnings);
       } else {
         const err = await response.json();
@@ -359,9 +405,11 @@ function SizeReviewRegister() {
               </label>
             )}
 
-            <div className="canvas-wrapper" style={{ display: (cvStep > 0 && cvStep < 4) ? 'flex' : 'none' }}>
+            <div className="canvas-wrapper" style={{ display: (cvStep > 0 && cvStep < 5) ? 'flex' : 'none' }}>
               <div className="canvas-instruction">
-                {cvStep === 1 ? "1. 의류 영역을 드래그하세요" : "2. A4 용지 영역을 드래그하세요"}
+                {cvStep === 1 ? "1. 의류 영역을 드래그하세요" : 
+                 cvStep === 2 ? "2. A4 용지 영역을 드래그하세요" : 
+                 cvStep === 3 ? "3. 어깨 재봉선 상단 양끝을 2번 클릭하세요" : ""}
               </div>
               <canvas
                 ref={canvasRef}
@@ -377,10 +425,11 @@ function SizeReviewRegister() {
                 <button onClick={() => {
                   setRectShirt(null);
                   setRectA4(null);
+                  setShoulderPts([]);
                   setCvStep(1);
-                  redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, null, null, null);
+                  redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, null, null, null, []);
                 }}><RotateCcw size={16} /> 영역 다시 그리기</button>
-                {cvStep === 3 && (
+                {cvStep === 4 && (
                   <button className="btn-analyze" onClick={handleAnalyze} disabled={cvLoading}>
                     {cvLoading ? '분석 중...' : '분석 시작'}
                   </button>
@@ -388,7 +437,7 @@ function SizeReviewRegister() {
               </div>
             </div>
 
-            {cvStep === 4 && cvResultData && (
+            {cvStep === 5 && cvResultData && (
               <div className="sr-result-card">
                 <div className="result-img-box">
                   <img src={`data:image/jpeg;base64,${cvResultData.debug_image_base64}`} alt="Result" />
@@ -397,6 +446,7 @@ function SizeReviewRegister() {
                   <div className="res-item"><span>총장</span><strong>{cvResultData.length_cm}cm</strong></div>
                   {isTop ? (
                     <>
+                      <div className="res-item"><span>어깨</span><strong>{cvResultData.shoulder_width_cm}cm</strong></div>
                       <div className="res-item"><span>가슴</span><strong>{cvResultData.chest_cm}cm</strong></div>
                       <div className="res-item"><span>소매</span><strong>{cvResultData.sleeve_width_cm}cm</strong></div>
                       <div className="res-item"><span>목폭</span><strong>{cvResultData.neck_width_cm}cm</strong></div>
@@ -423,14 +473,14 @@ function SizeReviewRegister() {
         </section>
 
         <div className="sr-actions">
-          {measurementWarnings.length > 0 && cvStep === 4 && (
+          {measurementWarnings.length > 0 && cvStep === 5 && (
             <div style={{ textAlign: 'center', color: '#dc2626', marginBottom: '1rem', fontSize: '0.9rem', fontWeight: 600 }}>
               추출된 치수가 정상 범위를 크게 벗어나 사이즈 후기로 등록할 수 없습니다.<br/>영역 지정이나 사진 구도를 확인하고 다시 시도해주세요.
             </div>
           )}
           <button
             className="btn-submit-sr"
-            disabled={cvStep !== 4 || !selectedSize || loading || measurementWarnings.length > 0}
+            disabled={cvStep !== 5 || !selectedSize || loading || measurementWarnings.length > 0}
             onClick={handleSubmitReview}
           >
             {loading ? '등록 중...' : '사이즈 후기 등록 완료'}

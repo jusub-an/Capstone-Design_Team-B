@@ -255,6 +255,10 @@ async def measure_clothing(
     orig_w: float = Form(...),
     orig_h: float = Form(...),
     category_type: str = Form('Top'),
+    shoulder_x1: float = Form(None),
+    shoulder_y1: float = Form(None),
+    shoulder_x2: float = Form(None),
+    shoulder_y2: float = Form(None),
 ):
     shirt_bytes = await shirt_image.read()
     a4_bytes = await a4_image.read()
@@ -264,12 +268,18 @@ async def measure_clothing(
 
     try:
         engine = get_clothing_measure_engine()
+        
+        shoulder_pts = None
+        if shoulder_x1 is not None and shoulder_y1 is not None and shoulder_x2 is not None and shoulder_y2 is not None:
+            shoulder_pts = [(shoulder_x1, shoulder_y1), (shoulder_x2, shoulder_y2)]
+
         result = await run_in_threadpool(
             engine.process, 
             shirt_bytes, a4_bytes, 
             shirt_rect, a4_rect, 
             orig_w, orig_h,
-            category_type
+            category_type,
+            shoulder_pts
         )
         return result
     except ValueError as e:

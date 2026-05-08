@@ -26,7 +26,7 @@ class ClothingMeasureEngine:
         proj_y = a[1] + u * (b[1] - a[1])
         return math.hypot(p[0] - proj_x, p[1] - proj_y)
 
-    def process(self, shirt_image_bytes, a4_image_bytes, shirt_rect, a4_rect, orig_w, orig_h, category_type="Top"):
+    def process(self, shirt_image_bytes, a4_image_bytes, shirt_rect, a4_rect, orig_w, orig_h, category_type="Top", shoulder_pts=None):
         debug_stages = {}  # 각 단계별 디버그 이미지 저장
 
         # 0. 원본 크롭 이미지 저장
@@ -429,6 +429,20 @@ class ClothingMeasureEngine:
         draw_point(neck_r, (255, 255, 100), "Neck R")
         draw_line(neck_l, neck_r, (255, 255, 100), f"Neck {round(neck_cm,1)}cm")
 
+        shoulder_cm = 0
+        if shoulder_pts is not None:
+            sh_arr = np.array([[shoulder_pts[0]], [shoulder_pts[1]]], dtype=np.float32)
+            warped_sh = cv2.perspectiveTransform(sh_arr, M_new)
+            sh_x1, sh_y1 = warped_sh[0][0]
+            sh_x2, sh_y2 = warped_sh[1][0]
+            shoulder_cm = abs(sh_x1 - sh_x2) / ppcm
+            # draw shoulder line horizontally
+            # we use the average y for visualization
+            avg_y = (sh_y1 + sh_y2) / 2
+            draw_point((sh_x1, sh_y1), (0, 255, 255), "Shoulder L")
+            draw_point((sh_x2, sh_y2), (0, 255, 255), "Shoulder R")
+            draw_line((sh_x1, avg_y), (sh_x2, avg_y), (0, 255, 255), f"Shoulder {round(shoulder_cm,1)}cm")
+
         debug_base64 = self._encode_img(debug_img)
 
         # 디버그: 최종 결과 이미지
@@ -437,6 +451,7 @@ class ClothingMeasureEngine:
         return {
             "length_cm": round(length_cm, 1),
             "chest_cm": round(chest_cm, 1),
+            "shoulder_width_cm": round(shoulder_cm, 1) if shoulder_pts else 0.0,
             "sleeve_width_cm": round(sle_wid_cm, 1),
             "neck_width_cm": round(neck_cm, 1),
             "debug_image_base64": debug_base64,
