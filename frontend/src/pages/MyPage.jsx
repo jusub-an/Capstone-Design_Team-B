@@ -1,14 +1,22 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronRight, Package, User, MessageSquareMore, Settings, LogOut, Heart, Search, ShoppingBag } from 'lucide-react';
+import { ChevronRight, Package, User, MessageSquareMore, LogOut, Heart, ShoppingBag, Shirt } from 'lucide-react';
 import './ProductList.css'; // Reusing some header styles
 
 function MyPage() {
   const navigate = useNavigate();
-  const [searchQuery, setSearchQuery] = useState('');
+  const [cartCount, setCartCount] = useState(0);
   const username = sessionStorage.getItem('username') || 'User';
   const email = sessionStorage.getItem('userEmail') || 'No Email';
   const isLoggedIn = !!sessionStorage.getItem('token');
+
+  React.useEffect(() => {
+    if (!email || email === 'No Email') return;
+    fetch(`http://localhost:8000/api/cart/${encodeURIComponent(email)}`)
+      .then(r => r.ok ? r.json() : [])
+      .then(items => setCartCount(items.length))
+      .catch(() => {});
+  }, [email]);
 
   const handleLogout = () => {
     sessionStorage.removeItem('token');
@@ -18,9 +26,10 @@ function MyPage() {
   };
 
   const menuItems = [
+    { title: '가상 피팅룸', icon: <Shirt size={20} />, path: '/mypage/fitting', description: '아바타에 옷을 입혀 피팅을 확인합니다.', highlight: true },
     { title: '상품 관리', icon: <Package size={20} />, path: '/mypage/products', description: '등록한 상품을 확인합니다.' },
     { title: '찜한 상품 목록', icon: <Heart size={20} />, path: '/mypage/wishes', description: '찜한 상품들을 확인합니다.' },
-    { title: '아바타 관리', icon: <User size={20} />, path: '/mypage/body-measure', description: '나의 아바타 정보를 확인합니다.' },
+    { title: '아바타 관리', icon: <User size={20} />, path: '/mypage/avatar', description: '나의 아바타 정보를 확인합니다.' },
     { title: '리뷰 관리', icon: <MessageSquareMore size={20} />, path: '/mypage/reviews', description: '작성한 리뷰 목록을 확인합니다.' }
   ];
 
@@ -36,9 +45,9 @@ function MyPage() {
           <button className="action-icon-btn" onClick={() => navigate('/mypage/wishes')}>
             <Heart size={22} />
           </button>
-          <button className="action-icon-btn">
+          <button className="action-icon-btn" onClick={() => navigate('/mypage/fitting')}>
             <ShoppingBag size={22} />
-            <span className="badge">0</span>
+            {cartCount > 0 && <span className="badge">{cartCount}</span>}
           </button>
 
           {isLoggedIn ? (
@@ -99,7 +108,7 @@ function MyPage() {
               className="menu-item"
               onClick={() => item.path !== '#' && navigate(item.path)}
               style={{
-                background: 'white',
+                background: item.highlight ? 'linear-gradient(135deg, #eef2ff, #f5f3ff)' : 'white',
                 padding: '20px',
                 borderRadius: '15px',
                 display: 'flex',
@@ -107,7 +116,7 @@ function MyPage() {
                 justifyContent: 'space-between',
                 cursor: item.path !== '#' ? 'pointer' : 'default',
                 transition: 'transform 0.2s, box-shadow 0.2s',
-                border: '1px solid #eee'
+                border: item.highlight ? '1.5px solid #c4b5fd' : '1px solid #eee',
               }}
               onMouseEnter={(e) => {
                 if (item.path !== '#') {
@@ -125,11 +134,11 @@ function MyPage() {
                   width: '40px',
                   height: '40px',
                   borderRadius: '10px',
-                  background: '#f0f2f5',
+                  background: item.highlight ? 'linear-gradient(135deg, #6366f1, #a855f7)' : '#f0f2f5',
                   display: 'flex',
                   justifyContent: 'center',
                   alignItems: 'center',
-                  color: '#555'
+                  color: item.highlight ? 'white' : '#555',
                 }}>
                   {item.icon}
                 </div>

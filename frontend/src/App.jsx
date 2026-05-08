@@ -11,7 +11,9 @@ import Wishlist from './pages/Wishlist';
 import MyReviews from './pages/MyReviews';
 import BodyMeasure from './pages/BodyMeasure';
 import VirtualFitting from './pages/VirtualFitting';
+import FittingRoom from './pages/FittingRoom';
 import SizeReviewRegister from './pages/SizeReviewRegister';
+import AvatarManage from './pages/AvatarManage';
 
 
 function App() {
@@ -36,6 +38,8 @@ function App() {
           <Route path="/reviews/new/:productId" element={<ReviewRegister />} />
           <Route path="/reviews/edit/:reviewId" element={<ReviewRegister />} />
           <Route path="/mypage/body-measure" element={<BodyMeasure />} />
+          <Route path="/mypage/avatar" element={<AvatarManage />} />
+          <Route path="/mypage/fitting" element={<FittingRoom />} />
           <Route path="/mypage/wishes" element={<Wishlist />} />
           <Route path="/mypage/reviews" element={<MyReviews />} />
           <Route path="/size-reviews/new/:productId" element={<SizeReviewRegister />} />

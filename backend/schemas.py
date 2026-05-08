@@ -63,6 +63,7 @@ class ProductResponse(BaseModel):
     price: int
     description: str | None = None
     image_url: str
+    fitting_image_url: str | None = None
     desc_images: list[ProductImageResponse] = []
     top_sizes: list[TopSizeResponse] = []
     bottom_sizes: list[BottomSizeResponse] = []
@@ -138,5 +139,22 @@ class SizeReviewResponse(BaseModel):
     neck_or_hem: float | None = None
     created_at: Any | None = None
     images: list[SizeReviewImageResponse] = []
+    class Config:
+        from_attributes = True
+
+class AvatarResponse(BaseModel):
+    id: int
+    user_email: str
+    gray_mask_url: str | None = None
+    person_extracted_url: str | None = None
+    measurements: Any | None = None
+    height_cm: float | None = None
+
+class CartItemResponse(BaseModel):
+    id: int
+    user_email: str
+    product_id: int
+    size_name: str | None = None
+    product: ProductResponse
     class Config:
         from_attributes = True

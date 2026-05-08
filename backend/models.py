@@ -29,6 +29,7 @@ class Product(Base):
     price = Column(Integer, nullable=False)
     description = Column(Text, nullable=True)
     image_url = Column(String(500), nullable=False)
+    fitting_image_url = Column(String(500), nullable=True)
     owner_email = Column(String(100), ForeignKey("users.email"), nullable=True)
     avg_rating = Column(Float, default=0.0)
     review_count = Column(Integer, default=0)
@@ -121,6 +122,27 @@ class SizeReview(Base):
     
     product = relationship("Product")
     images = relationship("SizeReviewImage", back_populates="size_review", cascade="all, delete-orphan")
+
+class Avatar(Base):
+    __tablename__ = "avatars"
+    id = Column(Integer, Identity(start=1), primary_key=True)
+    user_email = Column(String(100), nullable=False, unique=True)
+    gray_mask_url = Column(String(500), nullable=True)
+    person_extracted_url = Column(String(500), nullable=True)
+    measurements = Column(Text, nullable=True)  # JSON string
+    height_cm = Column(Float, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+class CartItem(Base):
+    __tablename__ = "cart_items"
+    id = Column(Integer, Identity(start=1), primary_key=True)
+    user_email = Column(String(100), nullable=False)
+    product_id = Column(Integer, nullable=False)
+    size_name = Column(String(50), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    product = relationship("Product", foreign_keys=[product_id],
+                           primaryjoin="CartItem.product_id == Product.id")
 
 class SizeReviewImage(Base):
     __tablename__ = "size_review_image"

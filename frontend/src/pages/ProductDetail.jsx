@@ -15,10 +15,58 @@ function ProductDetail() {
   const [sizeReviews, setSizeReviews] = useState([]);
   const [selectedSizeFilter, setSelectedSizeFilter] = useState('ALL');
   const [expandedReviewId, setExpandedReviewId] = useState(null);
+  const [showCartModal, setShowCartModal] = useState(false);
+  const [selectedCartSize, setSelectedCartSize] = useState('');
+  const [cartAdding, setCartAdding] = useState(false);
+  const [cartAdded, setCartAdded] = useState(false);
+  const [cartOpen, setCartOpen] = useState(false);
+  const [cartItems, setCartItems] = useState([]);
+  const [cartCount, setCartCount] = useState(0);
 
   const isLoggedIn = !!sessionStorage.getItem('token');
   const userEmail = sessionStorage.getItem('userEmail');
   const username = sessionStorage.getItem('username') || 'User';
+
+  const handleAddToCart = async () => {
+    if (!isLoggedIn) { alert('로그인이 필요합니다.'); navigate('/login'); return; }
+    const sizes = product?.category?.name?.includes('상의') ? product.top_sizes : product.bottom_sizes;
+    if (sizes && sizes.length > 0 && !selectedCartSize) {
+      setShowCartModal(true);
+      return;
+    }
+    setCartAdding(true);
+    try {
+      const fd = new FormData();
+      fd.append('user_email', userEmail);
+      fd.append('product_id', id);
+      if (selectedCartSize) fd.append('size_name', selectedCartSize);
+      await axios.post('http://localhost:8000/api/cart/add', fd);
+      setCartAdded(true);
+      setShowCartModal(false);
+      refreshCart();
+      setTimeout(() => setCartAdded(false), 2500);
+    } catch (err) {
+      alert('장바구니 담기 실패: ' + (err.response?.data?.detail || err.message));
+    } finally {
+      setCartAdding(false);
+    }
+  };
+
+  const refreshCart = React.useCallback(() => {
+    if (!userEmail) return;
+    fetch(`http://localhost:8000/api/cart/${encodeURIComponent(userEmail)}`)
+      .then(r => r.ok ? r.json() : [])
+      .then(items => { setCartItems(items); setCartCount(items.length); })
+      .catch(() => {});
+  }, [userEmail]);
+
+  React.useEffect(() => { refreshCart(); }, [refreshCart]);
+
+  const removeCartItem = async (itemId) => {
+    if (!userEmail) return;
+    await fetch(`http://localhost:8000/api/cart/${itemId}?user_email=${encodeURIComponent(userEmail)}`, { method: 'DELETE' });
+    refreshCart();
+  };
 
   const handleLogout = () => {
     sessionStorage.removeItem('token');
@@ -199,10 +247,55 @@ function ProductDetail() {
           <button className="action-icon-btn" onClick={() => navigate('/mypage/wishes')}>
             <Heart size={22} />
           </button>
-          <button className="action-icon-btn">
-            <ShoppingBag size={22} />
-            <span className="badge">0</span>
-          </button>
+          <div style={{ position: 'relative' }}>
+            <button className="action-icon-btn" onClick={() => setCartOpen(o => !o)}>
+              <ShoppingBag size={22} />
+              {cartCount > 0 && <span className="badge">{cartCount}</span>}
+            </button>
+            {cartOpen && (
+              <>
+                <div style={{ position: 'fixed', inset: 0, zIndex: 98 }} onClick={() => setCartOpen(false)} />
+                <div style={{
+                  position: 'absolute', top: 'calc(100% + 8px)', right: 0,
+                  width: '300px', background: 'white', borderRadius: '16px',
+                  boxShadow: '0 8px 32px rgba(0,0,0,0.14)', border: '1px solid #e2e8f0',
+                  zIndex: 99, overflow: 'hidden',
+                }}>
+                  <div style={{ padding: '14px 16px', borderBottom: '1px solid #f1f5f9', fontWeight: 700, fontSize: '0.95rem', color: '#1e293b' }}>
+                    장바구니 {cartCount > 0 ? `(${cartCount})` : ''}
+                  </div>
+                  {cartItems.length === 0 ? (
+                    <div style={{ padding: '24px', textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem' }}>장바구니가 비어있습니다</div>
+                  ) : (
+                    <div style={{ maxHeight: '260px', overflowY: 'auto' }}>
+                      {cartItems.map(item => (
+                        <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 16px', borderBottom: '1px solid #f8fafc' }}>
+                          <img src={`http://localhost:8000${item.product.image_url}`} alt={item.product.name}
+                            style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '8px', flexShrink: 0 }} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ margin: 0, fontSize: '0.8rem', fontWeight: 600, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.product.name}</p>
+                            {item.size_name && <span style={{ fontSize: '0.72rem', color: '#6366f1' }}>{item.size_name}</span>}
+                          </div>
+                          <button onClick={() => removeCartItem(item.id)}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', fontSize: '1rem', padding: '2px 4px', flexShrink: 0 }}>✕</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div style={{ padding: '12px 16px' }}>
+                    <button onClick={() => { setCartOpen(false); navigate('/mypage/fitting'); }}
+                      style={{
+                        width: '100%', padding: '10px', borderRadius: '10px', border: 'none',
+                        background: 'linear-gradient(135deg, #6366f1, #a855f7)',
+                        color: 'white', fontWeight: 700, fontSize: '0.88rem', cursor: 'pointer',
+                      }}>
+                      ✨ 가상 피팅룸에서 착용해보기
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
 
           {isLoggedIn ? (
             <div className="user-profile-wrapper">
@@ -279,15 +372,69 @@ function ProductDetail() {
             </button>
 
             <div className="purchase-actions">
-              <button className="btn-cart">
+              <button
+                className="btn-cart"
+                onClick={() => {
+                  const sizes = product?.category?.name?.includes('상의') ? product.top_sizes : product.bottom_sizes;
+                  if (sizes && sizes.length > 0) { setShowCartModal(true); }
+                  else handleAddToCart();
+                }}
+                style={cartAdded ? { background: '#27ae60', color: 'white' } : {}}
+              >
                 <ShoppingCart size={20} />
-                <span>장바구니</span>
+                <span>{cartAdded ? '담김 ✓' : '장바구니'}</span>
               </button>
               <button className="btn-buy">바로 구매하기</button>
               <button className="btn-wish" onClick={handleToggleWish}>
                 <Heart size={20} fill={product.is_wished ? "#ff4d4f" : "none"} color={product.is_wished ? "#ff4d4f" : "#aaa"} />
               </button>
             </div>
+
+            {showCartModal && (
+              <div style={{
+                position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+                display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+                zIndex: 1000,
+              }} onClick={() => setShowCartModal(false)}>
+                <div style={{
+                  background: 'white', borderRadius: '20px 20px 0 0',
+                  padding: '28px 24px 32px', width: '100%', maxWidth: '480px',
+                  boxShadow: '0 -8px 32px rgba(0,0,0,0.12)',
+                }} onClick={e => e.stopPropagation()}>
+                  <h3 style={{ margin: '0 0 16px', fontSize: '1.1rem', fontWeight: 700 }}>사이즈 선택</h3>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '20px' }}>
+                    {(product?.category?.name?.includes('상의') ? product.top_sizes : product.bottom_sizes).map(s => (
+                      <button
+                        key={s.size_name}
+                        onClick={() => setSelectedCartSize(s.size_name)}
+                        style={{
+                          padding: '10px 22px', borderRadius: '10px', fontWeight: 600,
+                          fontSize: '0.95rem', cursor: 'pointer', transition: 'all 0.2s',
+                          border: selectedCartSize === s.size_name ? '2px solid #6366f1' : '2px solid #e2e8f0',
+                          background: selectedCartSize === s.size_name ? '#eef2ff' : 'white',
+                          color: selectedCartSize === s.size_name ? '#6366f1' : '#334155',
+                        }}
+                      >
+                        {s.size_name}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    onClick={handleAddToCart}
+                    disabled={!selectedCartSize || cartAdding}
+                    style={{
+                      width: '100%', padding: '14px',
+                      background: !selectedCartSize ? '#e2e8f0' : 'linear-gradient(135deg, #6366f1, #a855f7)',
+                      color: !selectedCartSize ? '#94a3b8' : 'white',
+                      border: 'none', borderRadius: '12px',
+                      fontSize: '1rem', fontWeight: 700, cursor: !selectedCartSize ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    {cartAdding ? '담는 중...' : '장바구니에 담기'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

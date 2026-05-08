@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, useCallback } from 'react';
+import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { ChevronLeft, Upload, Ruler, AlertTriangle, CheckCircle, Heart, ShoppingBag } from 'lucide-react';
@@ -32,6 +32,11 @@ function BodyMeasure() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('debug');
+  const [avatarSaving, setAvatarSaving] = useState(false);
+  const [avatarSaved, setAvatarSaved] = useState(false);
+  const [cartOpen, setCartOpen] = useState(false);
+  const [cartItems, setCartItems] = useState([]);
+  const [cartCount, setCartCount] = useState(0);
 
   // 캔버스 드래그 크롭 상태
   const canvasRef = useRef(null);
@@ -204,6 +209,58 @@ function BodyMeasure() {
     }
   };
 
+  const refreshCart = () => {
+    const email = sessionStorage.getItem('userEmail');
+    if (!email) return;
+    fetch(`http://localhost:8000/api/cart/${encodeURIComponent(email)}`)
+      .then(r => r.ok ? r.json() : [])
+      .then(items => { setCartItems(items); setCartCount(items.length); })
+      .catch(() => {});
+  };
+
+  const removeCartItem = async (itemId) => {
+    const email = sessionStorage.getItem('userEmail');
+    if (!email) return;
+    await fetch(`http://localhost:8000/api/cart/${itemId}?user_email=${encodeURIComponent(email)}`, { method: 'DELETE' });
+    refreshCart();
+  };
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { refreshCart(); }, []);
+
+  const base64ToBlob = (base64, mime = 'image/jpeg') => {
+    const binary = atob(base64);
+    const arr = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
+    return new Blob([arr], { type: mime });
+  };
+
+  const handleSaveAvatar = async () => {
+    const userEmail = sessionStorage.getItem('userEmail');
+    if (!userEmail) { alert('로그인이 필요합니다.'); return; }
+    if (!result) return;
+    setAvatarSaving(true);
+    try {
+      const fd = new FormData();
+      fd.append('user_email', userEmail);
+      fd.append('height_cm', heightCm);
+      fd.append('measurements', JSON.stringify(result.measurements));
+      fd.append('gray_mask', base64ToBlob(result.gray_mask_base64), 'gray_mask.jpg');
+      fd.append('person_extracted', base64ToBlob(result.person_extracted_base64), 'person_extracted.jpg');
+      const res = await axios.post('http://localhost:8000/api/avatar/save', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      if (res.status === 200) {
+        setAvatarSaved(true);
+        setTimeout(() => setAvatarSaved(false), 3000);
+      }
+    } catch (err) {
+      alert('아바타 저장 실패: ' + (err.response?.data?.detail || err.message));
+    } finally {
+      setAvatarSaving(false);
+    }
+  };
+
   const handleLogout = () => {
     sessionStorage.removeItem('token');
     sessionStorage.removeItem('username');
@@ -222,10 +279,55 @@ function BodyMeasure() {
           <button className="action-icon-btn" onClick={() => navigate('/mypage/wishes')}>
             <Heart size={22} />
           </button>
-          <button className="action-icon-btn">
-            <ShoppingBag size={22} />
-            <span className="badge">0</span>
-          </button>
+          <div style={{ position: 'relative' }}>
+            <button className="action-icon-btn" onClick={() => setCartOpen(o => !o)}>
+              <ShoppingBag size={22} />
+              {cartCount > 0 && <span className="badge">{cartCount}</span>}
+            </button>
+            {cartOpen && (
+              <>
+                <div style={{ position: 'fixed', inset: 0, zIndex: 98 }} onClick={() => setCartOpen(false)} />
+                <div style={{
+                  position: 'absolute', top: 'calc(100% + 8px)', right: 0,
+                  width: '300px', background: 'white', borderRadius: '16px',
+                  boxShadow: '0 8px 32px rgba(0,0,0,0.14)', border: '1px solid #e2e8f0',
+                  zIndex: 99, overflow: 'hidden',
+                }}>
+                  <div style={{ padding: '14px 16px', borderBottom: '1px solid #f1f5f9', fontWeight: 700, fontSize: '0.95rem', color: '#1e293b' }}>
+                    장바구니 {cartCount > 0 ? `(${cartCount})` : ''}
+                  </div>
+                  {cartItems.length === 0 ? (
+                    <div style={{ padding: '24px', textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem' }}>장바구니가 비어있습니다</div>
+                  ) : (
+                    <div style={{ maxHeight: '260px', overflowY: 'auto' }}>
+                      {cartItems.map(item => (
+                        <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 16px', borderBottom: '1px solid #f8fafc' }}>
+                          <img src={`http://localhost:8000${item.product.image_url}`} alt={item.product.name}
+                            style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '8px', flexShrink: 0 }} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ margin: 0, fontSize: '0.8rem', fontWeight: 600, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.product.name}</p>
+                            {item.size_name && <span style={{ fontSize: '0.72rem', color: '#6366f1' }}>{item.size_name}</span>}
+                          </div>
+                          <button onClick={() => removeCartItem(item.id)}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', fontSize: '1rem', padding: '2px 4px', flexShrink: 0 }}>✕</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div style={{ padding: '12px 16px' }}>
+                    <button onClick={() => { setCartOpen(false); navigate('/mypage/fitting'); }}
+                      style={{
+                        width: '100%', padding: '10px', borderRadius: '10px', border: 'none',
+                        background: 'linear-gradient(135deg, #6366f1, #a855f7)',
+                        color: 'white', fontWeight: 700, fontSize: '0.88rem', cursor: 'pointer',
+                      }}>
+                      ✨ 가상 피팅룸에서 착용해보기
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
 
           {isLoggedIn ? (
             <div className="user-profile-wrapper">
@@ -556,6 +658,40 @@ function BodyMeasure() {
                   alt="그레이 실루엣"
                   style={{ width: '100%', borderRadius: '12px', objectFit: 'contain' }}
                 />
+              )}
+            </div>
+
+            <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #f0f0f0', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <button
+                onClick={handleSaveAvatar}
+                disabled={avatarSaving || avatarSaved}
+                style={{
+                  width: '100%', padding: '13px',
+                  background: avatarSaved
+                    ? 'linear-gradient(135deg, #27ae60, #2ecc71)'
+                    : avatarSaving
+                    ? '#b0bec5'
+                    : 'linear-gradient(135deg, #6e8efb, #a777e3)',
+                  color: 'white', border: 'none', borderRadius: '12px',
+                  fontSize: '1rem', fontWeight: 600,
+                  cursor: (avatarSaving || avatarSaved) ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.3s',
+                }}
+              >
+                {avatarSaved ? '✅ 아바타 저장 완료!' : avatarSaving ? '저장 중...' : '🧍 아바타로 저장 (피팅룸에서 사용)'}
+              </button>
+              {avatarSaved && (
+                <button
+                  onClick={() => navigate('/mypage/avatar')}
+                  style={{
+                    width: '100%', padding: '11px',
+                    background: 'white', border: '1.5px solid #6e8efb',
+                    borderRadius: '12px', fontSize: '0.9rem', fontWeight: 600,
+                    color: '#6366f1', cursor: 'pointer',
+                  }}
+                >
+                  📏 저장된 치수 확인하기
+                </button>
               )}
             </div>
           </div>
