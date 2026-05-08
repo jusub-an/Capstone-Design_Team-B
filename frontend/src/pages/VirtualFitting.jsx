@@ -1,7 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Send, Sparkles, Ruler, MessageSquare, Info, Key } from 'lucide-react';
+import { ArrowLeft, Send, Sparkles, Ruler, MessageSquare, Info, Key, User } from 'lucide-react';
 import './VirtualFitting.css';
+
+const BASE = 'http://localhost:8000';
+const CV_W = 300, CV_H = 500;
+const DRAW_H = CV_H * 0.9;
+const OFFSET_Y = (CV_H - DRAW_H) / 2 + CV_H * 0.02;
+const FILL_RATIO = 0.78;
 
 function VirtualFitting() {
   const { id } = useParams();
@@ -15,6 +21,15 @@ function VirtualFitting() {
   const [productImages, setProductImages] = useState([]);
   const [productInfo, setProductInfo] = useState(null);
   const [productReviews, setProductReviews] = useState([]);
+
+  // ── overlay canvas state ──
+  const canvasRef = useRef(null);
+  const userEmail = sessionStorage.getItem('userEmail');
+  const [avatar, setAvatar] = useState(null);
+  const [avatarImg, setAvatarImg] = useState(null);
+  const [fittingImg, setFittingImg] = useState(null);
+  const [selectedSize, setSelectedSize] = useState(null);
+  const [preparingFit, setPreparingFit] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -64,6 +79,143 @@ function VirtualFitting() {
     };
     fetchData();
   }, [id]);
+
+  // ── fetch avatar ──────────────────────────────────────────────────
+  useEffect(() => {
+    if (!userEmail) return;
+    fetch(`${BASE}/api/avatar/${encodeURIComponent(userEmail)}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(setAvatar)
+      .catch(() => {});
+  }, [userEmail]);
+
+  // ── remove gray/white background from avatar JPEG ─────────────────
+  const removeBackground = useCallback((img, isGray) => {
+    const off = document.createElement('canvas');
+    off.width = img.width; off.height = img.height;
+    const ctx = off.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    const d = ctx.getImageData(0, 0, off.width, off.height);
+    const px = d.data;
+    for (let i = 0; i < px.length; i += 4) {
+      const r = px[i], g = px[i+1], b = px[i+2];
+      const br = (r+g+b)/3;
+      const sat = Math.max(r,g,b) === 0 ? 0 : (Math.max(r,g,b)-Math.min(r,g,b))/Math.max(r,g,b);
+      if (br > (isGray ? 140 : 230) || (br > 200 && sat < 0.12)) px[i+3] = 0;
+    }
+    ctx.putImageData(d, 0, 0);
+    return off;
+  }, []);
+
+  // ── load avatar image ──────────────────────────────────────────────
+  useEffect(() => {
+    if (!avatar?.gray_mask_url) { setAvatarImg(null); return; }
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => setAvatarImg(removeBackground(img, true));
+    img.onerror = () => setAvatarImg(null);
+    img.src = `${BASE}${avatar.gray_mask_url}`;
+  }, [avatar, removeBackground]);
+
+  // ── auto-fit scale/position ────────────────────────────────────────
+  const computeAutoFit = useCallback((img, height_cm, length_cm, isTop) => {
+    let scale;
+    if (height_cm && length_cm) {
+      scale = (length_cm * (DRAW_H / height_cm)) / (img.height * FILL_RATIO);
+    } else if (height_cm) {
+      scale = (DRAW_H * (isTop ? 0.28 : 0.32)) / (img.height * FILL_RATIO);
+    } else {
+      scale = (CV_W * 0.55) / img.width;
+    }
+    scale = Math.max(0.05, Math.min(1.5, scale));
+    const x = (CV_W - img.width * scale) / 2;
+    const y = OFFSET_Y + DRAW_H * (isTop ? 0.13 : 0.42);
+    return { x, y, scale };
+  }, []);
+
+  // ── prepare fitting image (rembg) when product loads ─────────────
+  useEffect(() => {
+    if (!productInfo) return;
+    const load = (url) => {
+      const img = new Image();
+      img.onload = () => setFittingImg(img);
+      img.onerror = () => setFittingImg(null);
+      img.src = url.startsWith('http') ? url : `${BASE}${url}`;
+    };
+    if (productInfo.fitting_image_url) {
+      load(productInfo.fitting_image_url);
+    } else {
+      setPreparingFit(true);
+      fetch(`${BASE}/api/products/${productInfo.id}/prepare-fitting`, { method: 'POST' })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => { if (data?.fitting_image_url) load(data.fitting_image_url); })
+        .catch(() => {})
+        .finally(() => setPreparingFit(false));
+    }
+  }, [productInfo]);
+
+  // ── init selected size ────────────────────────────────────────────
+  useEffect(() => {
+    if (!productInfo) return;
+    const isTop = productInfo.category?.name?.includes('상의') ?? true;
+    const sizes = isTop ? productInfo.top_sizes : productInfo.bottom_sizes;
+    if (sizes?.length > 0) setSelectedSize(sizes[0]);
+  }, [productInfo]);
+
+  // ── draw canvas ───────────────────────────────────────────────────
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, CV_W, CV_H);
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillRect(0, 0, CV_W, CV_H);
+
+    if (avatarImg) {
+      const aspect = avatarImg.width / avatarImg.height;
+      const dh = DRAW_H, dw = dh * aspect;
+      ctx.drawImage(avatarImg, (CV_W - dw) / 2, OFFSET_Y, dw, dh);
+    }
+
+    if (fittingImg && avatar) {
+      const isTop = productInfo?.category?.name?.includes('상의') ?? true;
+      const length_cm = selectedSize?.length ?? null;
+      const { x, y, scale } = computeAutoFit(fittingImg, avatar.height_cm, length_cm, isTop);
+      ctx.drawImage(fittingImg, x, y, fittingImg.width * scale, fittingImg.height * scale);
+    }
+  }, [avatarImg, fittingImg, selectedSize, avatar, productInfo, computeAutoFit]);
+
+  // ── size list & fit badge helpers ─────────────────────────────────
+  const getSizes = () => {
+    if (!productInfo) return [];
+    const isTop = productInfo.category?.name?.includes('상의') ?? true;
+    return isTop ? (productInfo.top_sizes || []) : (productInfo.bottom_sizes || []);
+  };
+
+  const getAvatarMeasure = (key) =>
+    avatar?.measurements?.find?.(m => m.key === key)?.value_cm ?? null;
+
+  const fitBadge = (userVal, clothingVal) => {
+    if (userVal == null || clothingVal == null) return null;
+    const diff = userVal - clothingVal;
+    const [label, color] =
+      diff < -3 ? ['타이트', '#ef4444'] :
+      diff > 5  ? ['루즈',   '#f59e0b'] :
+                  ['적정',   '#22c55e'];
+    return (
+      <span style={{
+        fontSize: '0.7rem', fontWeight: 700, padding: '1px 7px', borderRadius: '20px',
+        background: color + '20', color, border: `1px solid ${color}40`,
+      }}>
+        {label} ({diff >= 0 ? '+' : ''}{diff.toFixed(1)})
+      </span>
+    );
+  };
+
+  const isTop = productInfo?.category?.name?.includes('상의') ?? true;
+  const fitPairs = isTop
+    ? [{ label: '어깨', k: 'shoulder' }, { label: '가슴', k: 'chest' }, { label: '소매', k: 'sleeve' }]
+    : [{ label: '허리', k: 'waist' }, { label: '허벅지', k: 'thigh' }];
 
   const getBase64ImageFromUrl = (imageUrl) => {
     return new Promise((resolve, reject) => {
@@ -248,19 +400,89 @@ ${productDetailsText}
             <h3>2D 가상 피팅 시뮬레이션</h3>
           </div>
 
-          <div className="vf-canvas-container">
-            {/* 시각화 캔버스 자리표시자 */}
-            <div className="vf-mock-canvas">
-              <div className="vf-silhouette-placeholder">
-                <div className="vf-mock-avatar"></div>
-                <div className="vf-mock-clothes"></div>
+          <div className="vf-canvas-container" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+            {/* ── overlay canvas ── */}
+            {!userEmail ? (
+              <div style={{ textAlign: 'center', color: '#94a3b8', padding: '40px 0' }}>
+                <User size={40} style={{ marginBottom: '8px' }} />
+                <p style={{ fontSize: '0.85rem' }}>로그인 후 아바타를 불러올 수 있습니다</p>
               </div>
-              <div className="vf-canvas-overlay-text">
-                <Ruler size={32} />
-                <p>아바타 및 2D 의류 생성 대기 중...</p>
-                <span className="vf-subtext">신체 치수와 의류 치수 비례 연산이 이곳에 적용됩니다.</span>
+            ) : !avatar && !avatarImg ? (
+              <div style={{ textAlign: 'center', color: '#94a3b8', padding: '40px 0' }}>
+                <User size={40} style={{ marginBottom: '8px' }} />
+                <p style={{ fontSize: '0.85rem', margin: '0 0 10px' }}>저장된 아바타가 없습니다</p>
+                <button
+                  onClick={() => navigate('/mypage/body-measure')}
+                  style={{ padding: '7px 16px', borderRadius: '10px', border: 'none', background: '#6366f1', color: 'white', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}
+                >신체 측정 하러 가기</button>
               </div>
-            </div>
+            ) : (
+              <div style={{ position: 'relative', display: 'inline-block' }}>
+                <canvas
+                  ref={canvasRef}
+                  width={CV_W}
+                  height={CV_H}
+                  style={{ borderRadius: '16px', boxShadow: '0 4px 20px rgba(0,0,0,0.08)', display: 'block', maxWidth: '100%' }}
+                />
+                {preparingFit && (
+                  <div style={{
+                    position: 'absolute', inset: 0, borderRadius: '16px',
+                    background: 'rgba(255,255,255,0.75)', display: 'flex', flexDirection: 'column',
+                    alignItems: 'center', justifyContent: 'center', gap: '8px',
+                  }}>
+                    <div style={{ width: '28px', height: '28px', border: '3px solid #6366f1', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                    <span style={{ fontSize: '0.8rem', color: '#6366f1', fontWeight: 600 }}>누끼 처리 중...</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── size selector ── */}
+            {getSizes().length > 0 && (
+              <div style={{ width: '100%', maxWidth: `${CV_W}px` }}>
+                <p style={{ margin: '0 0 6px', fontSize: '0.78rem', color: '#64748b', fontWeight: 600 }}>사이즈 선택</p>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                  {getSizes().map(s => (
+                    <button
+                      key={s.size_name}
+                      onClick={() => setSelectedSize(s)}
+                      style={{
+                        padding: '5px 13px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 600,
+                        border: `1.5px solid ${selectedSize?.size_name === s.size_name ? '#6366f1' : '#e2e8f0'}`,
+                        background: selectedSize?.size_name === s.size_name ? '#eef2ff' : 'white',
+                        color: selectedSize?.size_name === s.size_name ? '#6366f1' : '#64748b',
+                        cursor: 'pointer',
+                      }}
+                    >{s.size_name}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ── fit analysis for selected size ── */}
+            {selectedSize && avatar?.measurements && (
+              <div style={{ width: '100%', maxWidth: `${CV_W}px`, background: '#f8fafc', borderRadius: '12px', padding: '10px 14px' }}>
+                <p style={{ margin: '0 0 8px', fontSize: '0.78rem', fontWeight: 700, color: '#334155' }}>
+                  핏 분석 ({selectedSize.size_name})
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                  {fitPairs.map(({ label, k }) => {
+                    const userVal = getAvatarMeasure(k);
+                    const clothingVal = selectedSize[k];
+                    if (clothingVal == null) return null;
+                    return (
+                      <div key={k} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.78rem' }}>
+                        <span style={{ color: '#64748b', minWidth: '36px' }}>{label}</span>
+                        <span style={{ color: '#475569' }}>
+                          {userVal != null ? `내 ${userVal.toFixed(1)} / 의류 ${clothingVal}` : `의류 ${clothingVal} cm`}
+                        </span>
+                        {fitBadge(userVal, clothingVal)}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </section>
 

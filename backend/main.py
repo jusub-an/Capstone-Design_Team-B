@@ -853,6 +853,21 @@ def remove_from_cart_by_product(product_id: int, user_email: str, size_name: str
 
 # --- 피팅 이미지 생성 (배경제거) ---
 
+@app.delete("/api/products/{product_id}/prepare-fitting")
+def reset_fitting_image(product_id: int, db: Session = Depends(get_db)):
+    product = db.query(models.Product).filter(models.Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    product.fitting_image_url = None
+    db.commit()
+    return {"message": "fitting_image_url reset"}
+
+@app.delete("/api/admin/reset-all-fitting-images")
+def reset_all_fitting_images(db: Session = Depends(get_db)):
+    db.query(models.Product).update({models.Product.fitting_image_url: None})
+    db.commit()
+    return {"message": "All fitting_image_url reset"}
+
 @app.post("/api/products/{product_id}/prepare-fitting")
 async def prepare_fitting_image(product_id: int, db: Session = Depends(get_db)):
     product = db.query(models.Product).filter(models.Product.id == product_id).first()
@@ -868,14 +883,27 @@ async def prepare_fitting_image(product_id: int, db: Session = Depends(get_db)):
 
     try:
         from rembg import remove as rembg_remove
+        from PIL import Image as PILImage
+        import io
+
         with open(img_path, "rb") as f:
             raw = f.read()
-        removed = await run_in_threadpool(rembg_remove, raw)
+        removed_bytes = await run_in_threadpool(rembg_remove, raw)
+
+        # 투명 여백 제거: alpha 채널 기준 bounding box로 크롭
+        pil_img = PILImage.open(io.BytesIO(removed_bytes)).convert("RGBA")
+        bbox = pil_img.getbbox()   # (left, upper, right, lower) of non-transparent area
+        if bbox:
+            pil_img = pil_img.crop(bbox)
+
+        buf = io.BytesIO()
+        pil_img.save(buf, format="PNG")
+        cropped_bytes = buf.getvalue()
 
         fname = f"fitting_{uuid.uuid4().hex}.png"
         save_path = os.path.join(FITTING_DIR, fname)
         with open(save_path, "wb") as f:
-            f.write(removed)
+            f.write(cropped_bytes)
 
         fitting_url = f"/uploads/fitting_images/{fname}"
         product.fitting_image_url = fitting_url
