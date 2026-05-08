@@ -161,6 +161,7 @@ async def measure_body(
         "debug_image_base64":      _encode(result["debug_image"]),
         "person_extracted_base64": _encode(result["person_extracted"]),
         "gray_mask_base64":        _encode(result["gray_mask"]),
+        "gray_debug_image_base64": _encode(result["gray_debug_image"]),
     }
 
 # --- 의류 치수 측정 엔드포인트 ---
