@@ -27,9 +27,27 @@ function VirtualFitting() {
   const userEmail = sessionStorage.getItem('userEmail');
   const [avatar, setAvatar] = useState(null);
   const [avatarImg, setAvatarImg] = useState(null);
-  const [fittingImg, setFittingImg] = useState(null);
   const [selectedSize, setSelectedSize] = useState(null);
-  const [preparingFit, setPreparingFit] = useState(false);
+  const [showSizeOverlay, setShowSizeOverlay] = useState(true);
+  const [showDimLines, setShowDimLines] = useState(false);
+  const [sleeveAngle, setSleeveAngle] = useState('auto');
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartPos = useRef({ x: 0, y: 0 });
+
+  const handleMouseDown = (e) => {
+    setIsDragging(true);
+    dragStartPos.current = { x: e.nativeEvent.offsetX - dragOffset.x, y: e.nativeEvent.offsetY - dragOffset.y };
+  };
+  const handleMouseMove = (e) => {
+    if (!isDragging) return;
+    setDragOffset({
+      x: e.nativeEvent.offsetX - dragStartPos.current.x,
+      y: e.nativeEvent.offsetY - dragStartPos.current.y
+    });
+  };
+  const handleMouseUpOrLeave = () => setIsDragging(false);
+  const handleDoubleClick = () => setDragOffset({ x: 0, y: 0 });
 
   useEffect(() => {
     const fetchData = async () => {
@@ -97,13 +115,42 @@ function VirtualFitting() {
     ctx.drawImage(img, 0, 0);
     const d = ctx.getImageData(0, 0, off.width, off.height);
     const px = d.data;
+    
+    let top = img.height, bottom = 0, left = img.width, right = 0;
+    
     for (let i = 0; i < px.length; i += 4) {
       const r = px[i], g = px[i+1], b = px[i+2];
       const br = (r+g+b)/3;
       const sat = Math.max(r,g,b) === 0 ? 0 : (Math.max(r,g,b)-Math.min(r,g,b))/Math.max(r,g,b);
-      if (br > (isGray ? 140 : 230) || (br > 200 && sat < 0.12)) px[i+3] = 0;
+      
+      let isBg = false;
+      if (br > (isGray ? 140 : 230) || (br > 200 && sat < 0.12)) {
+        isBg = true;
+        px[i+3] = 0;
+      }
+      
+      if (!isBg && px[i+3] > 0) {
+        const idx = i / 4;
+        const x = idx % img.width;
+        const y = Math.floor(idx / img.width);
+        if (y < top) top = y;
+        if (y > bottom) bottom = y;
+        if (x < left) left = x;
+        if (x > right) right = x;
+      }
     }
     ctx.putImageData(d, 0, 0);
+    
+    if (bottom >= top && right >= left) {
+      const cropW = right - left + 1;
+      const cropH = bottom - top + 1;
+      const cropped = document.createElement('canvas');
+      cropped.width = cropW;
+      cropped.height = cropH;
+      cropped.getContext('2d').drawImage(off, left, top, cropW, cropH, 0, 0, cropW, cropH);
+      return cropped;
+    }
+    
     return off;
   }, []);
 
@@ -117,43 +164,6 @@ function VirtualFitting() {
     img.src = `${BASE}${avatar.gray_mask_url}`;
   }, [avatar, removeBackground]);
 
-  // ── auto-fit scale/position ────────────────────────────────────────
-  const computeAutoFit = useCallback((img, height_cm, length_cm, isTop) => {
-    let scale;
-    if (height_cm && length_cm) {
-      scale = (length_cm * (DRAW_H / height_cm)) / (img.height * FILL_RATIO);
-    } else if (height_cm) {
-      scale = (DRAW_H * (isTop ? 0.28 : 0.32)) / (img.height * FILL_RATIO);
-    } else {
-      scale = (CV_W * 0.55) / img.width;
-    }
-    scale = Math.max(0.05, Math.min(1.5, scale));
-    const x = (CV_W - img.width * scale) / 2;
-    const y = OFFSET_Y + DRAW_H * (isTop ? 0.13 : 0.42);
-    return { x, y, scale };
-  }, []);
-
-  // ── prepare fitting image (rembg) when product loads ─────────────
-  useEffect(() => {
-    if (!productInfo) return;
-    const load = (url) => {
-      const img = new Image();
-      img.onload = () => setFittingImg(img);
-      img.onerror = () => setFittingImg(null);
-      img.src = url.startsWith('http') ? url : `${BASE}${url}`;
-    };
-    if (productInfo.fitting_image_url) {
-      load(productInfo.fitting_image_url);
-    } else {
-      setPreparingFit(true);
-      fetch(`${BASE}/api/products/${productInfo.id}/prepare-fitting`, { method: 'POST' })
-        .then(r => r.ok ? r.json() : null)
-        .then(data => { if (data?.fitting_image_url) load(data.fitting_image_url); })
-        .catch(() => {})
-        .finally(() => setPreparingFit(false));
-    }
-  }, [productInfo]);
-
   // ── init selected size ────────────────────────────────────────────
   useEffect(() => {
     if (!productInfo) return;
@@ -161,6 +171,37 @@ function VirtualFitting() {
     const sizes = isTop ? productInfo.top_sizes : productInfo.bottom_sizes;
     if (sizes?.length > 0) setSelectedSize(sizes[0]);
   }, [productInfo]);
+
+  // ── auto calculate sleeve angle ──────────────────────────────────
+  const getAutoSleeveAngle = useCallback(() => {
+    if (!selectedSize || !productInfo?.category?.name?.includes('상의') || !avatar) return 65;
+    let heightRatio = 1;
+    if (avatar.measurements) {
+      try {
+        const m = typeof avatar.measurements === 'string' ? JSON.parse(avatar.measurements) : avatar.measurements;
+        // new format: { items: [...], height_ratio: N }
+        // old format: [...] array
+        if (m && m.height_ratio) heightRatio = m.height_ratio;
+      } catch(e) {}
+    }
+    const px_per_cm = DRAW_H / (avatar.height_cm * heightRatio);
+    const getVal = (val, defaultVal) => (val && val > 0) ? val : defaultVal;
+    
+    const shoulderWidth = getVal(selectedSize.shoulder, 45) * px_per_cm;
+    const chestWidth = getVal(selectedSize.chest, 50) * px_per_cm;
+    const sleeveLength = getVal(selectedSize.sleeve_length, 20) * px_per_cm;
+    const sleeveOpening = getVal(selectedSize.sleeve, 16) * px_per_cm;
+    
+    const dx = chestWidth/2 - shoulderWidth/2;
+    const R = Math.sqrt(sleeveLength*sleeveLength + sleeveOpening*sleeveOpening);
+    if (R > 0 && Math.abs(dx / R) <= 1) {
+      let calc = (Math.acos(dx / R) - Math.atan2(sleeveOpening, sleeveLength)) * 180 / Math.PI;
+      return isNaN(calc) ? 65 : Math.max(0, Math.min(90, calc));
+    }
+    return 65;
+  }, [selectedSize, productInfo, avatar]);
+
+  const currentSleeveAngle = sleeveAngle === 'auto' ? getAutoSleeveAngle() : sleeveAngle;
 
   // ── draw canvas ───────────────────────────────────────────────────
   useEffect(() => {
@@ -177,13 +218,261 @@ function VirtualFitting() {
       ctx.drawImage(avatarImg, (CV_W - dw) / 2, OFFSET_Y, dw, dh);
     }
 
-    if (fittingImg && avatar) {
+    ctx.save();
+    ctx.translate(dragOffset.x, dragOffset.y);
+
+    // Draw Size Chart Overlay
+    if (showSizeOverlay && avatar && selectedSize) {
+      let heightRatio = 1;
+      if (avatar.measurements) {
+        try {
+          const m = typeof avatar.measurements === 'string' ? JSON.parse(avatar.measurements) : avatar.measurements;
+          // new format: { items: [...], height_ratio: N } / old format: [...]
+          if (m && m.height_ratio) heightRatio = m.height_ratio;
+        } catch(e) {}
+      }
+      // DRAW_H는 발가락 끝까지 타이트 크롭된 전체 이미지 높이입니다.
+      // 실제 입력받은 키(avatar.height_cm)는 발꿈치까지의 길이이므로, 
+      // 전체 이미지 높이 비율(heightRatio)을 곱해 보정합니다.
+      const px_per_cm = DRAW_H / (avatar.height_cm * heightRatio);
       const isTop = productInfo?.category?.name?.includes('상의') ?? true;
-      const length_cm = selectedSize?.length ?? null;
-      const { x, y, scale } = computeAutoFit(fittingImg, avatar.height_cm, length_cm, isTop);
-      ctx.drawImage(fittingImg, x, y, fittingImg.width * scale, fittingImg.height * scale);
+      
+      const centerX = CV_W / 2;
+      // 평균적 머리 높이 = 키의 13.5% (1/7.4)
+      // avatar 이미지는 OFFSET_Y에서 그려지며 실루엣의 매 픽셀 = px_per_cm 단위이므로
+      // 의류 시작점도 동일한 px_per_cm 기준으로 계산
+      const headHeight_cm = avatar.height_cm * 0.135; // 머리높이 아래에 어깨선이 시작
+      const startY = isTop
+        ? OFFSET_Y + headHeight_cm * px_per_cm
+        : OFFSET_Y + avatar.height_cm * heightRatio * 0.42 * px_per_cm;
+
+      const getVal = (val, defaultVal) => (val && val > 0) ? val : defaultVal;
+      const getLabel = (name, val) => (val && val > 0) ? `${name} ${val}cm` : `${name} 정보 없음`;
+      const isMissing = (val) => !(val && val > 0);
+
+      const drawDimLine = (x1, y1, x2, y2, text, offsetX = 0, offsetY = 0, missing = false) => {
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.strokeStyle = missing ? 'rgba(156, 163, 175, 0.8)' : 'rgba(239, 68, 68, 0.6)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash(missing ? [2, 4] : [4, 4]);
+        ctx.stroke();
+        
+        const angle = Math.atan2(y2 - y1, x2 - x1);
+        const tickLen = 3;
+        ctx.beginPath();
+        ctx.moveTo(x1 - tickLen * Math.sin(angle), y1 + tickLen * Math.cos(angle));
+        ctx.lineTo(x1 + tickLen * Math.sin(angle), y1 - tickLen * Math.cos(angle));
+        ctx.moveTo(x2 - tickLen * Math.sin(angle), y2 + tickLen * Math.cos(angle));
+        ctx.lineTo(x2 + tickLen * Math.sin(angle), y2 - tickLen * Math.cos(angle));
+        ctx.setLineDash([]);
+        ctx.stroke();
+
+        ctx.font = '600 9px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const mx = (x1 + x2) / 2 + offsetX;
+        const my = (y1 + y2) / 2 + offsetY;
+        
+        const textMetrics = ctx.measureText(text);
+        const padding = 6;
+        const bgWidth = textMetrics.width + padding * 2;
+        const bgHeight = 16;
+        
+        ctx.fillStyle = missing ? 'rgba(243, 244, 246, 0.9)' : 'rgba(254, 242, 242, 0.9)';
+        ctx.beginPath();
+        if (ctx.roundRect) {
+          ctx.roundRect(mx - bgWidth/2, my - bgHeight/2, bgWidth, bgHeight, 8);
+        } else {
+          ctx.rect(mx - bgWidth/2, my - bgHeight/2, bgWidth, bgHeight);
+        }
+        ctx.fill();
+        ctx.strokeStyle = missing ? 'rgba(209, 213, 219, 1)' : 'rgba(252, 165, 165, 1)';
+        ctx.stroke();
+        
+        ctx.fillStyle = missing ? '#6b7280' : '#ef4444';
+        ctx.fillText(text, mx, my);
+        ctx.restore();
+      };
+
+      ctx.save();
+      ctx.strokeStyle = '#6366f1'; // Indigo color
+      ctx.lineWidth = 2;
+      ctx.fillStyle = 'rgba(99, 102, 241, 0.15)'; // Transparent indigo
+      ctx.beginPath();
+
+      if (isTop) {
+        const neckVal = selectedSize.neck;
+        const shoulderVal = selectedSize.shoulder;
+        const chestVal = selectedSize.chest;
+        const lengthVal = selectedSize.length;
+        const sleeveVal = selectedSize.sleeve_length;
+        const sleeveWidthVal = selectedSize.sleeve;
+
+        const neckWidth = getVal(neckVal, 15) * px_per_cm;
+        const shoulderWidth = getVal(shoulderVal, 40) * px_per_cm;
+        const chestWidth = getVal(chestVal, 50) * px_per_cm;
+        const totalLength = getVal(lengthVal, 65) * px_per_cm;
+        const sleeveLength = getVal(sleeveVal, 20) * px_per_cm;
+        
+        const armhole = 22 * px_per_cm;
+        const shoulderDrop = 4 * px_per_cm;
+        const neckDrop = 4 * px_per_cm;
+        
+        ctx.moveTo(centerX - neckWidth/2, startY);
+        // Curved Neckline
+        ctx.quadraticCurveTo(centerX, startY + neckDrop, centerX + neckWidth/2, startY);
+        
+        // Right shoulder
+        ctx.lineTo(centerX + shoulderWidth/2, startY + shoulderDrop);
+        
+        const angle = currentSleeveAngle * Math.PI / 180;
+        const rx1 = centerX + shoulderWidth/2 + sleeveLength * Math.cos(angle);
+        const ry1 = startY + shoulderDrop + sleeveLength * Math.sin(angle);
+        ctx.lineTo(rx1, ry1);
+        
+        const sleeveOpening = getVal(sleeveWidthVal, 16) * px_per_cm;
+        const rx2 = rx1 - sleeveOpening * Math.sin(angle);
+        const ry2 = ry1 + sleeveOpening * Math.cos(angle);
+        ctx.lineTo(rx2, ry2);
+        
+        // Armpit curve
+        ctx.quadraticCurveTo(centerX + chestWidth/2, startY + armhole - 2*px_per_cm, centerX + chestWidth/2, startY + armhole);
+        
+        // Right side seam
+        ctx.quadraticCurveTo(centerX + chestWidth/2 - 1.5*px_per_cm, startY + armhole + (totalLength - armhole)/2, centerX + chestWidth/2, startY + totalLength);
+        
+        // Hem
+        ctx.quadraticCurveTo(centerX, startY + totalLength + 1.5*px_per_cm, centerX - chestWidth/2, startY + totalLength);
+        
+        // Left side seam
+        ctx.quadraticCurveTo(centerX - chestWidth/2 + 1.5*px_per_cm, startY + armhole + (totalLength - armhole)/2, centerX - chestWidth/2, startY + armhole);
+        
+        const lx2 = centerX - shoulderWidth/2 - sleeveLength * Math.cos(angle) + sleeveOpening * Math.sin(angle);
+        const ly2 = startY + shoulderDrop + sleeveLength * Math.sin(angle) + sleeveOpening * Math.cos(angle);
+        
+        // Armpit curve
+        ctx.quadraticCurveTo(centerX - chestWidth/2, startY + armhole - 2*px_per_cm, lx2, ly2);
+        
+        const lx1 = centerX - shoulderWidth/2 - sleeveLength * Math.cos(angle);
+        const ly1 = startY + shoulderDrop + sleeveLength * Math.sin(angle);
+        ctx.lineTo(lx1, ly1);
+        
+        ctx.lineTo(centerX - shoulderWidth/2, startY + shoulderDrop);
+        
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        if (showDimLines) {
+          drawDimLine(centerX - shoulderWidth/2, startY + shoulderDrop - 8, centerX + shoulderWidth/2, startY + shoulderDrop - 8, getLabel('어깨', shoulderVal), 0, -10, isMissing(shoulderVal));
+          drawDimLine(centerX - chestWidth/2, startY + armhole + 15, centerX + chestWidth/2, startY + armhole + 15, getLabel('가슴', chestVal), 0, 0, isMissing(chestVal));
+          drawDimLine(centerX, startY, centerX, startY + totalLength, getLabel('총장', lengthVal), 36, 0, isMissing(lengthVal));
+          
+          const sx1 = centerX + shoulderWidth/2;
+          const sy1 = startY + shoulderDrop;
+          const sx2 = sx1 + sleeveLength * Math.cos(angle);
+          const sy2 = sy1 + sleeveLength * Math.sin(angle);
+          drawDimLine(sx1, sy1 - 10, sx2, sy2 - 10, getLabel('소매길이', sleeveVal), 0, -12, isMissing(sleeveVal));
+          
+          const sleeveOpening = getVal(sleeveWidthVal, 16) * px_per_cm;
+          const sx3 = sx2 - sleeveOpening * Math.sin(angle);
+          const sy3 = sy2 + sleeveOpening * Math.cos(angle);
+          // 소매단면 치수선 (살짝 옆으로 띄워서 표시)
+          drawDimLine(sx2 + 5, sy2 + 5, sx3 + 5, sy3 + 5, getLabel('소매단면', sleeveWidthVal), 10, 0, isMissing(sleeveWidthVal));
+          
+          drawDimLine(centerX - neckWidth/2, startY - 10, centerX + neckWidth/2, startY - 10, getLabel('목폭', neckVal), 0, -10, isMissing(neckVal));
+        }
+
+      } else {
+        const waistVal = selectedSize.waist;
+        const thighVal = selectedSize.thigh;
+        const lengthVal = selectedSize.length;
+        const riseVal = selectedSize.rise;
+        const hemVal = selectedSize.hem;
+
+        const waistWidth = getVal(waistVal, 35) * px_per_cm;
+        const thighWidth = getVal(thighVal, 25) * px_per_cm;
+        const totalLength = getVal(lengthVal, 100) * px_per_cm;
+        const riseLength = getVal(riseVal, 25) * px_per_cm;
+        const hemWidth = getVal(hemVal, 20) * px_per_cm;
+
+        ctx.moveTo(centerX - waistWidth/2, startY);
+        // Waist curved slightly
+        ctx.quadraticCurveTo(centerX, startY + 2*px_per_cm, centerX + waistWidth/2, startY);
+        
+        // Right outer hip curve
+        ctx.quadraticCurveTo(centerX + thighWidth, startY + riseLength/2, centerX + thighWidth, startY + riseLength);
+        ctx.lineTo(centerX + thighWidth/2 + hemWidth/2, startY + totalLength);
+        
+        // Right hem curve
+        ctx.quadraticCurveTo(centerX + thighWidth/2, startY + totalLength + 1.5*px_per_cm, centerX + thighWidth/2 - hemWidth/2, startY + totalLength);
+        
+        // Crotch curve
+        ctx.quadraticCurveTo(centerX + 2*px_per_cm, startY + riseLength, centerX, startY + riseLength);
+        ctx.quadraticCurveTo(centerX - 2*px_per_cm, startY + riseLength, centerX - thighWidth/2 + hemWidth/2, startY + totalLength);
+        
+        // Left hem curve
+        ctx.quadraticCurveTo(centerX - thighWidth/2, startY + totalLength + 1.5*px_per_cm, centerX - thighWidth/2 - hemWidth/2, startY + totalLength);
+        ctx.lineTo(centerX - thighWidth, startY + riseLength);
+        
+        // Left outer hip curve
+        ctx.quadraticCurveTo(centerX - thighWidth, startY + riseLength/2, centerX - waistWidth/2, startY);
+        
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        if (showDimLines) {
+          drawDimLine(centerX - waistWidth/2, startY - 10, centerX + waistWidth/2, startY - 10, getLabel('허리', waistVal), 0, -10, isMissing(waistVal));
+          drawDimLine(centerX, startY + riseLength + 10, centerX + thighWidth, startY + riseLength + 10, getLabel('허벅지', thighVal), 0, 0, isMissing(thighVal));
+          drawDimLine(centerX, startY, centerX, startY + riseLength, getLabel('밑위', riseVal), -36, 0, isMissing(riseVal));
+          drawDimLine(centerX - thighWidth - 15, startY, centerX - thighWidth - 15, startY + totalLength, getLabel('총장', lengthVal), -36, 0, isMissing(lengthVal));
+          drawDimLine(centerX + thighWidth/2 - hemWidth/2, startY + totalLength + 12, centerX + thighWidth/2 + hemWidth/2, startY + totalLength + 12, getLabel('밑단', hemVal), 0, 10, isMissing(hemVal));
+        }
+      }
+      ctx.restore();
     }
-  }, [avatarImg, fittingImg, selectedSize, avatar, productInfo, computeAutoFit]);
+    
+    
+    ctx.restore(); // Restore global translation
+
+    // ── 가이드라인 시각화 (Height Visualization) - 드래그에 고정됨 ──
+    if (showDimLines && avatar) {
+      let heightRatioGuide = 1;
+      if (avatar.measurements) {
+        try {
+          const mg = typeof avatar.measurements === 'string' ? JSON.parse(avatar.measurements) : avatar.measurements;
+          if (mg && mg.height_ratio) heightRatioGuide = mg.height_ratio;
+        } catch(e) {}
+      }
+      ctx.save();
+      const guideX = CV_W - 15;
+      ctx.strokeStyle = '#6366f1';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([2, 2]);
+
+      ctx.beginPath(); ctx.moveTo(guideX - 40, OFFSET_Y); ctx.lineTo(guideX, OFFSET_Y); ctx.stroke();
+
+      const heelYg = OFFSET_Y + (DRAW_H / heightRatioGuide);
+      ctx.beginPath(); ctx.moveTo(guideX - 40, heelYg); ctx.lineTo(guideX, heelYg); ctx.stroke();
+
+      ctx.beginPath(); ctx.moveTo(guideX - 40, OFFSET_Y + DRAW_H); ctx.lineTo(guideX, OFFSET_Y + DRAW_H); ctx.stroke();
+
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#6366f1';
+      ctx.font = 'bold 9px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText('정수리 (0cm)', guideX - 45, OFFSET_Y + 3);
+      ctx.fillText(`${avatar.height_cm}cm (발꿈치)`, guideX - 45, heelYg + 3);
+      ctx.fillText('전체 이미지 끝 (발가락)', guideX - 45, OFFSET_Y + DRAW_H + 3);
+
+      ctx.beginPath(); ctx.moveTo(guideX - 5, OFFSET_Y); ctx.lineTo(guideX - 5, OFFSET_Y + DRAW_H); ctx.stroke();
+      ctx.restore();
+    }
+  }, [avatarImg, selectedSize, avatar, productInfo, showSizeOverlay, dragOffset, showDimLines, sleeveAngle]);
 
   // ── size list & fit badge helpers ─────────────────────────────────
   const getSizes = () => {
@@ -192,8 +481,14 @@ function VirtualFitting() {
     return isTop ? (productInfo.top_sizes || []) : (productInfo.bottom_sizes || []);
   };
 
-  const getAvatarMeasure = (key) =>
-    avatar?.measurements?.find?.(m => m.key === key)?.value_cm ?? null;
+  const getAvatarMeasure = (key) => {
+    if (!avatar?.measurements) return null;
+    try {
+      const m = typeof avatar.measurements === 'string' ? JSON.parse(avatar.measurements) : avatar.measurements;
+      const arr = Array.isArray(m) ? m : (m?.items ?? []);
+      return arr.find(item => item.key === key)?.value_cm ?? null;
+    } catch(e) { return null; }
+  };
 
   const fitBadge = (userVal, clothingVal) => {
     if (userVal == null || clothingVal == null) return null;
@@ -422,25 +717,49 @@ ${productDetailsText}
                   ref={canvasRef}
                   width={CV_W}
                   height={CV_H}
-                  style={{ borderRadius: '16px', boxShadow: '0 4px 20px rgba(0,0,0,0.08)', display: 'block', maxWidth: '100%' }}
+                  style={{ borderRadius: '16px', boxShadow: '0 4px 20px rgba(0,0,0,0.08)', display: 'block', maxWidth: '100%', cursor: isDragging ? 'grabbing' : 'grab' }}
+                  onMouseDown={handleMouseDown}
+                  onMouseMove={handleMouseMove}
+                  onMouseUp={handleMouseUpOrLeave}
+                  onMouseLeave={handleMouseUpOrLeave}
+                  onDoubleClick={handleDoubleClick}
                 />
-                {preparingFit && (
-                  <div style={{
-                    position: 'absolute', inset: 0, borderRadius: '16px',
-                    background: 'rgba(255,255,255,0.75)', display: 'flex', flexDirection: 'column',
-                    alignItems: 'center', justifyContent: 'center', gap: '8px',
-                  }}>
-                    <div style={{ width: '28px', height: '28px', border: '3px solid #6366f1', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-                    <span style={{ fontSize: '0.8rem', color: '#6366f1', fontWeight: 600 }}>누끼 처리 중...</span>
-                  </div>
-                )}
+                <p style={{ margin: '-4px 0 0', fontSize: '0.72rem', color: '#94a3b8', textAlign: 'center' }}>
+                  의류를 드래그해서 이동할 수 있습니다 (더블클릭 시 복귀)
+                </p>
               </div>
             )}
 
             {/* ── size selector ── */}
             {getSizes().length > 0 && (
               <div style={{ width: '100%', maxWidth: `${CV_W}px` }}>
-                <p style={{ margin: '0 0 6px', fontSize: '0.78rem', color: '#64748b', fontWeight: 600 }}>사이즈 선택</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <p style={{ margin: 0, fontSize: '0.78rem', color: '#64748b', fontWeight: 600 }}>사이즈 선택</p>
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', color: '#64748b', cursor: 'pointer' }}>
+                        <input 
+                          type="checkbox" 
+                          checked={showSizeOverlay} 
+                          onChange={(e) => setShowSizeOverlay(e.target.checked)} 
+                          style={{ accentColor: '#6366f1' }}
+                        />
+                        핏 시각화
+                      </label>
+                      {showSizeOverlay && (
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', color: '#64748b', cursor: 'pointer' }}>
+                          <input 
+                            type="checkbox" 
+                            checked={showDimLines} 
+                            onChange={(e) => setShowDimLines(e.target.checked)} 
+                            style={{ accentColor: '#ef4444' }}
+                          />
+                          치수선 보기
+                        </label>
+                      )}
+                    </div>
+                  </div>
+                </div>
                 <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                   {getSizes().map(s => (
                     <button

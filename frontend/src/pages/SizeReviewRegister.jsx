@@ -294,6 +294,7 @@ function SizeReviewRegister() {
         submitData.append('chest_or_waist', cvResultData.chest_cm);
         submitData.append('shoulder_or_thigh', cvResultData.shoulder_width_cm || 0); // 어깨너비 추가 대응 필요시
         submitData.append('sleeve_or_rise', cvResultData.sleeve_width_cm);
+        submitData.append('sleeve_length', cvResultData.sleeve_length_cm > 0 ? cvResultData.sleeve_length_cm : 0);
         submitData.append('neck_or_hem', cvResultData.neck_width_cm);
       } else {
         submitData.append('chest_or_waist', cvResultData.waist_cm);
@@ -448,7 +449,8 @@ function SizeReviewRegister() {
                     <>
                       <div className="res-item"><span>어깨</span><strong>{cvResultData.shoulder_width_cm}cm</strong></div>
                       <div className="res-item"><span>가슴</span><strong>{cvResultData.chest_cm}cm</strong></div>
-                      <div className="res-item"><span>소매</span><strong>{cvResultData.sleeve_width_cm}cm</strong></div>
+                      <div className="res-item"><span>소매단면</span><strong>{cvResultData.sleeve_width_cm}cm</strong></div>
+                      {cvResultData.sleeve_length_cm > 0 && <div className="res-item"><span>소매길이</span><strong>{cvResultData.sleeve_length_cm}cm</strong></div>}
                       <div className="res-item"><span>목폭</span><strong>{cvResultData.neck_width_cm}cm</strong></div>
                     </>
                   ) : (

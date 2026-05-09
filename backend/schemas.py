@@ -34,6 +34,7 @@ class TopSizeBase(BaseModel):
     chest: float | None = None
     shoulder: float | None = None
     sleeve: float | None = None
+    sleeve_length: float | None = None
     neck: float | None = None
 
 class TopSizeResponse(TopSizeBase):
@@ -136,6 +137,7 @@ class SizeReviewResponse(BaseModel):
     chest_or_waist: float | None = None
     shoulder_or_thigh: float | None = None
     sleeve_or_rise: float | None = None
+    sleeve_length: float | None = None
     neck_or_hem: float | None = None
     created_at: Any | None = None
     images: list[SizeReviewImageResponse] = []

@@ -244,7 +244,10 @@ function BodyMeasure() {
       const fd = new FormData();
       fd.append('user_email', userEmail);
       fd.append('height_cm', heightCm);
-      fd.append('measurements', JSON.stringify(result.measurements));
+      fd.append('measurements', JSON.stringify({
+        items: result.measurements,
+        height_ratio: result.height_ratio ?? 1,
+      }));
       fd.append('gray_mask', base64ToBlob(result.gray_mask_base64), 'gray_mask.jpg');
       fd.append('person_extracted', base64ToBlob(result.person_extracted_base64), 'person_extracted.jpg');
       const res = await axios.post('http://localhost:8000/api/avatar/save', fd, {

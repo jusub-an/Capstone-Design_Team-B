@@ -95,13 +95,24 @@ class BodyMeasureEngine:
         raw_mask  = (alpha_arr > 128).astype(np.uint8) * 255
         mask = self._build_binary_mask(raw_mask, w)
 
-        # ── 스케일 계산 (HTML: topHeadY ~ heelYpx) ──
+        # ── 스케일 계산 (사용자 요청: 정수리 ~ 발꿈치) ──
         top_y = self._find_top_head_y(mask, landmarks)
         bottom_y = self._find_bottom_foot_y(mask, landmarks)
         pixel_height = float(bottom_y - top_y)
         if pixel_height <= 0:
             raise ValueError("신체 높이 픽셀 계산에 실패했습니다.")
         cm_per_pixel = float(user_height_cm / pixel_height)
+
+        # ── 전체 실루엣(정수리 ~ 발끝) 높이 비율 계산 (프론트엔드 가상 피팅 보정용) ──
+        actual_bottom_y = h - 1
+        for y in range(h - 1, -1, -1):
+            if np.any(mask[y, :] > 0):
+                actual_bottom_y = y
+                break
+        total_pixel_height = float(actual_bottom_y - top_y)
+        if total_pixel_height <= 0:
+            total_pixel_height = pixel_height
+        height_ratio = total_pixel_height / pixel_height
 
         # ── 랜드마크 픽셀 좌표 ──
         lm11, lm12 = landmarks[11], landmarks[12]   # 어깨
@@ -332,6 +343,7 @@ class BodyMeasureEngine:
             "image_height": h,
             "pixel_height": round(pixel_height, 1),
             "cm_per_pixel": round(cm_per_pixel, 4),
+            "height_ratio": round(height_ratio, 4),
             "anchors": {
                 "left_armpit":  armpits["left_armpit"],
                 "right_armpit": armpits["right_armpit"],
@@ -448,9 +460,7 @@ class BodyMeasureEngine:
         return max(0, int(landmarks[0]["y"]))
 
     def _find_bottom_foot_y(self, mask: np.ndarray, landmarks) -> int:
-        for y in range(mask.shape[0] - 1, -1, -1):
-            if np.any(mask[y, :] > 0):
-                return y
+        # 사용자의 요청에 따라 실루엣의 끝(발가락) 대신 MediaPipe에서 추출한 발꿈치(heel) 랜드마크 29, 30 중 더 낮은 Y좌표를 키의 끝으로 사용합니다.
         return int(max(landmarks[29]["y"], landmarks[30]["y"]))
 
     def _find_shoulder_edge(self, mask: np.ndarray,

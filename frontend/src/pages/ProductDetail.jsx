@@ -216,7 +216,8 @@ function ProductDetail() {
       if (isTop) {
         addDiff('가슴', sr.chest_or_waist, chartSize.chest);
         addDiff('어깨', sr.shoulder_or_thigh, chartSize.shoulder);
-        addDiff('소매', sr.sleeve_or_rise, chartSize.sleeve);
+        addDiff('소매단면', sr.sleeve_or_rise, chartSize.sleeve);
+        addDiff('소매길이', sr.sleeve_length, chartSize.sleeve_length);
         addDiff('목폭', sr.neck_or_hem, chartSize.neck);
       } else {
         addDiff('허리', sr.chest_or_waist, chartSize.waist);
@@ -475,7 +476,7 @@ function ProductDetail() {
                         <th>사이즈</th>
                         <th>총장</th>
                         {product.category.name.includes('상의') ? (
-                          <><th>어깨</th><th>가슴</th><th>소매</th><th>목폭</th></>
+                          <><th>어깨</th><th>가슴</th><th>소매단면</th><th>소매길이</th><th>목폭</th></>
                         ) : (
                           <><th>허리</th><th>허벅지</th><th>밑위</th><th>밑단</th></>
                         )}
@@ -487,7 +488,7 @@ function ProductDetail() {
                           <td><strong>{s.size_name}</strong></td>
                           <td>{s.length}</td>
                           {product.category.name.includes('상의') ? (
-                            <><td>{s.shoulder}</td><td>{s.chest}</td><td>{s.sleeve}</td><td>{s.neck}</td></>
+                            <><td>{s.shoulder}</td><td>{s.chest}</td><td>{s.sleeve}</td><td>{s.sleeve_length}</td><td>{s.neck}</td></>
                           ) : (
                             <><td>{s.waist}</td><td>{s.thigh}</td><td>{s.rise}</td><td>{s.hem}</td></>
                           )}

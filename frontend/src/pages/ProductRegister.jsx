@@ -96,7 +96,7 @@ function ProductRegister() {
         if (productSizes.length > 0) {
           setSizes(productSizes.map(s => ({ ...s, id: Math.random() })));
         } else {
-          setSizes([{ id: Date.now(), size_name: 'Free', length: '', chest: '', shoulder: '', sleeve: '', neck: '', waist: '', thigh: '', rise: '', hem: '' }]);
+          setSizes([{ id: Date.now(), size_name: 'Free', length: '', chest: '', shoulder: '', sleeve: '', sleeve_length: '', neck: '', waist: '', thigh: '', rise: '', hem: '' }]);
         }
       }
     } catch (error) {
@@ -435,6 +435,7 @@ function ProductRegister() {
             chest: cvResultData.chest_cm,
             shoulder: cvResultData.shoulder_width_cm,
             sleeve: cvResultData.sleeve_width_cm,
+            sleeve_length: cvResultData.sleeve_length_cm > 0 ? cvResultData.sleeve_length_cm : '',
             neck: cvResultData.neck_width_cm
           };
         } else {
@@ -574,7 +575,8 @@ function ProductRegister() {
                       <>
                         <div className="val-box"><span>어깨너비</span><strong>{cvResultData.shoulder_width_cm} cm</strong></div>
                         <div className="val-box"><span>가슴단면</span><strong>{cvResultData.chest_cm} cm</strong></div>
-                        <div className="val-box"><span>소매끝단면</span><strong>{cvResultData.sleeve_width_cm} cm</strong></div>
+                        <div className="val-box"><span>소매단면</span><strong>{cvResultData.sleeve_width_cm} cm</strong></div>
+                        {cvResultData.sleeve_length_cm > 0 && <div className="val-box"><span>소매길이</span><strong>{cvResultData.sleeve_length_cm} cm</strong></div>}
                         <div className="val-box"><span>넥라인</span><strong>{cvResultData.neck_width_cm} cm</strong></div>
                       </>
                     ) : (
@@ -731,7 +733,7 @@ function ProductRegister() {
               <button 
                 type="button" 
                 className="add-size-btn"
-                onClick={() => setSizes(prev => [...prev, { id: Date.now(), size_name: '', length: '', chest: '', shoulder: '', sleeve: '', neck: '', waist: '', thigh: '', rise: '', hem: '' }])}
+                onClick={() => setSizes(prev => [...prev, { id: Date.now(), size_name: '', length: '', chest: '', shoulder: '', sleeve: '', sleeve_length: '', neck: '', waist: '', thigh: '', rise: '', hem: '' }])}
               >
                 + 사이즈 추가
               </button>
@@ -790,8 +792,12 @@ function ProductRegister() {
                           <input type="number" step="0.1" value={size.chest || ''} onChange={(e) => setSizes(prev => prev.map(s => s.id === size.id ? {...s, chest: e.target.value} : s))} placeholder="0.0" />
                         </div>
                         <div className="m-input">
-                          <span>소매길이</span>
+                          <span>소매단면</span>
                           <input type="number" step="0.1" value={size.sleeve || ''} onChange={(e) => setSizes(prev => prev.map(s => s.id === size.id ? {...s, sleeve: e.target.value} : s))} placeholder="0.0" />
+                        </div>
+                        <div className="m-input">
+                          <span>소매길이</span>
+                          <input type="number" step="0.1" value={size.sleeve_length || ''} onChange={(e) => setSizes(prev => prev.map(s => s.id === size.id ? {...s, sleeve_length: e.target.value} : s))} placeholder="0.0" />
                         </div>
                         <div className="m-input">
                           <span>넥라인</span>
