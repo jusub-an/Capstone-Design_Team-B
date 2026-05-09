@@ -124,10 +124,14 @@
   border-radius: 20px;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  align-items: center;
+  overflow-y: auto;
+  overflow-x: hidden;
   position: relative;
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.03);
   min-height: 0;
+  padding: 16px;
+  box-sizing: border-box;
 }
 
 .vf-mock-canvas {

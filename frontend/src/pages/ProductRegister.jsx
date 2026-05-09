@@ -160,6 +160,7 @@ function ProductRegister() {
       submitData.append('sizes', JSON.stringify(sizes));
 
       if (mainImage) submitData.append('image', mainImage);
+      if (cvFittingImageUrl) submitData.append('fitting_image_url', cvFittingImageUrl);
       if (descImages.length > 0) {
         descImages.forEach((img) => submitData.append('desc_images', img));
       }
@@ -364,6 +365,7 @@ function ProductRegister() {
   };
 
   const [cvResultData, setCvResultData] = useState(null);
+  const [cvFittingImageUrl, setCvFittingImageUrl] = useState(null);
 
   const handleAnalyze = async () => {
     if (!rectShirt || !rectA4) return;
@@ -403,6 +405,7 @@ function ProductRegister() {
       if (response.ok) {
         const data = await response.json();
         setCvResultData(data);
+        if (data.fitting_image_url) setCvFittingImageUrl(data.fitting_image_url);
         setCvStep(5);
 
         // 비율 기반 비정상 치수 검증

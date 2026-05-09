@@ -277,13 +277,25 @@ async def measure_clothing(
             shoulder_pts = [(shoulder_x1, shoulder_y1), (shoulder_x2, shoulder_y2)]
 
         result = await run_in_threadpool(
-            engine.process, 
-            shirt_bytes, a4_bytes, 
-            shirt_rect, a4_rect, 
+            engine.process,
+            shirt_bytes, a4_bytes,
+            shirt_rect, a4_rect,
             orig_w, orig_h,
             category_type,
             shoulder_pts
         )
+
+        # rembg 결과를 파일로 저장해 fitting_image_url 제공
+        rembg_b64 = result.pop("shirt_rembg_base64", None)
+        if rembg_b64:
+            import base64 as _b64
+            png_bytes = _b64.b64decode(rembg_b64)
+            fname = f"fitting_{uuid.uuid4().hex}.png"
+            save_path = os.path.join(FITTING_DIR, fname)
+            with open(save_path, "wb") as f:
+                f.write(png_bytes)
+            result["fitting_image_url"] = f"/uploads/fitting_images/{fname}"
+
         return result
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -342,7 +354,7 @@ import json
 def create_product(
     category_id: int = Form(...), name: str = Form(...), brand: str = Form(...), price: int = Form(...),
     description: Optional[str] = Form(None), sizes: Optional[str] = Form(None), image: UploadFile = File(...), desc_images: List[UploadFile] = File([]),
-    owner_email: str = Form(...), db: Session = Depends(get_db)
+    owner_email: str = Form(...), fitting_image_url: Optional[str] = Form(None), db: Session = Depends(get_db)
 ):
     try:
         # 메인 이미지 저장
@@ -355,7 +367,7 @@ def create_product(
         
         new_product = models.Product(
             category_id=category_id, name=name, brand=brand, price=price, description=description,
-            image_url=image_url, owner_email=owner_email
+            image_url=image_url, owner_email=owner_email, fitting_image_url=fitting_image_url
         )
         db.add(new_product)
         # Flush to get ID without committing yet
@@ -416,7 +428,7 @@ def create_product(
 def update_product(
     product_id: int, category_id: int = Form(...), name: str = Form(...), brand: str = Form(...), price: int = Form(...),
     description: Optional[str] = Form(None), sizes: Optional[str] = Form(None), image: UploadFile = File(None), desc_images: List[UploadFile] = File([]),
-    owner_email: str = Form(...), db: Session = Depends(get_db)
+    owner_email: str = Form(...), fitting_image_url: Optional[str] = Form(None), db: Session = Depends(get_db)
 ):
     db_product = db.query(models.Product).filter(models.Product.id == product_id).first()
     if not db_product or db_product.owner_email != owner_email:
@@ -427,7 +439,9 @@ def update_product(
     db_product.brand = brand
     db_product.price = price
     db_product.description = description
-    
+    if fitting_image_url:
+        db_product.fitting_image_url = fitting_image_url
+
     if sizes:
         # 기존 사이즈 삭제
         db.query(models.TopSize).filter(models.TopSize.product_id == product_id).delete()

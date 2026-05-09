@@ -494,8 +494,8 @@ function VirtualFitting() {
     if (userVal == null || clothingVal == null) return null;
     const diff = userVal - clothingVal;
     const [label, color] =
-      diff < -3 ? ['타이트', '#ef4444'] :
-      diff > 5  ? ['루즈',   '#f59e0b'] :
+      diff > 3  ? ['타이트', '#ef4444'] :
+      diff < -5 ? ['루즈',   '#f59e0b'] :
                   ['적정',   '#22c55e'];
     return (
       <span style={{
@@ -509,8 +509,16 @@ function VirtualFitting() {
 
   const isTop = productInfo?.category?.name?.includes('상의') ?? true;
   const fitPairs = isTop
-    ? [{ label: '어깨', k: 'shoulder' }, { label: '가슴', k: 'chest' }, { label: '소매', k: 'sleeve' }]
-    : [{ label: '허리', k: 'waist' }, { label: '허벅지', k: 'thigh' }];
+    ? [
+        { label: '어깨',     avatarKey: 'shoulder',  clothingKey: 'shoulder' },
+        { label: '가슴',     avatarKey: 'chest',     clothingKey: 'chest' },
+        { label: '소매길이', avatarKey: 'sleeve',    clothingKey: 'sleeve_length' },
+        { label: '소매넓이', avatarKey: 'arm_width', clothingKey: 'sleeve' },
+      ]
+    : [
+        { label: '허리',   avatarKey: 'waist',  clothingKey: 'waist' },
+        { label: '허벅지', avatarKey: 'thigh',  clothingKey: 'thigh' },
+      ];
 
   const getBase64ImageFromUrl = (imageUrl) => {
     return new Promise((resolve, reject) => {
@@ -695,7 +703,7 @@ ${productDetailsText}
             <h3>2D 가상 피팅 시뮬레이션</h3>
           </div>
 
-          <div className="vf-canvas-container" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+          <div className="vf-canvas-container" style={{ gap: '12px' }}>
             {/* ── overlay canvas ── */}
             {!userEmail ? (
               <div style={{ textAlign: 'center', color: '#94a3b8', padding: '40px 0' }}>
@@ -712,19 +720,19 @@ ${productDetailsText}
                 >신체 측정 하러 가기</button>
               </div>
             ) : (
-              <div style={{ position: 'relative', display: 'inline-block' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                 <canvas
                   ref={canvasRef}
                   width={CV_W}
                   height={CV_H}
-                  style={{ borderRadius: '16px', boxShadow: '0 4px 20px rgba(0,0,0,0.08)', display: 'block', maxWidth: '100%', cursor: isDragging ? 'grabbing' : 'grab' }}
+                  style={{ borderRadius: '16px', boxShadow: '0 4px 20px rgba(0,0,0,0.08)', display: 'block', maxWidth: '100%', maxHeight: 'calc(100vh - 260px)', aspectRatio: `${CV_W} / ${CV_H}`, cursor: isDragging ? 'grabbing' : 'grab' }}
                   onMouseDown={handleMouseDown}
                   onMouseMove={handleMouseMove}
                   onMouseUp={handleMouseUpOrLeave}
                   onMouseLeave={handleMouseUpOrLeave}
                   onDoubleClick={handleDoubleClick}
                 />
-                <p style={{ margin: '-4px 0 0', fontSize: '0.72rem', color: '#94a3b8', textAlign: 'center' }}>
+                <p style={{ margin: '6px 0 0', fontSize: '0.72rem', color: '#94a3b8', textAlign: 'center' }}>
                   의류를 드래그해서 이동할 수 있습니다 (더블클릭 시 복귀)
                 </p>
               </div>
@@ -732,7 +740,7 @@ ${productDetailsText}
 
             {/* ── size selector ── */}
             {getSizes().length > 0 && (
-              <div style={{ width: '100%', maxWidth: `${CV_W}px` }}>
+              <div style={{ width: '100%' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '10px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <p style={{ margin: 0, fontSize: '0.78rem', color: '#64748b', fontWeight: 600 }}>사이즈 선택</p>
@@ -785,12 +793,12 @@ ${productDetailsText}
                   핏 분석 ({selectedSize.size_name})
                 </p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                  {fitPairs.map(({ label, k }) => {
-                    const userVal = getAvatarMeasure(k);
-                    const clothingVal = selectedSize[k];
+                  {fitPairs.map(({ label, avatarKey, clothingKey }) => {
+                    const userVal = getAvatarMeasure(avatarKey);
+                    const clothingVal = selectedSize[clothingKey];
                     if (clothingVal == null) return null;
                     return (
-                      <div key={k} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.78rem' }}>
+                      <div key={clothingKey} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.78rem' }}>
                         <span style={{ color: '#64748b', minWidth: '36px' }}>{label}</span>
                         <span style={{ color: '#475569' }}>
                           {userVal != null ? `내 ${userVal.toFixed(1)} / 의류 ${clothingVal}` : `의류 ${clothingVal} cm`}

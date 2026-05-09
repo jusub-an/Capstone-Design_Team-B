@@ -192,7 +192,9 @@ class ClothingMeasureEngine:
         debug_stages['9_silhouette_contour'] = self._encode_img(contour_vis)
 
         if category_type == "Bottom":
-            return self._process_bottom(tshirt_cnt, warped_shirt_mask, src_tri, M_new, ppcm, x, y, w, h, mid_x, debug_stages)
+            result = self._process_bottom(tshirt_cnt, warped_shirt_mask, src_tri, M_new, ppcm, x, y, w, h, mid_x, debug_stages)
+            result["shirt_rembg_base64"] = self._crop_and_encode_png(shirt_mask_bytes)
+            return result
 
         hull = cv2.convexHull(tshirt_cnt, returnPoints=False)
         defects = cv2.convexityDefects(tshirt_cnt, hull)
@@ -486,6 +488,9 @@ class ClothingMeasureEngine:
         # 디버그: 최종 결과 이미지
         debug_stages['12_final_debug'] = debug_base64
 
+        # 피팅용 이미지: rembg RGBA에서 투명 여백 제거 후 PNG base64
+        shirt_rembg_base64 = self._crop_and_encode_png(shirt_mask_bytes)
+
         return {
             "length_cm": round(length_cm, 1),
             "chest_cm": round(chest_cm, 1),
@@ -495,8 +500,21 @@ class ClothingMeasureEngine:
             "neck_width_cm": round(neck_cm, 1),
             "debug_image_base64": debug_base64,
             "debug_stages": debug_stages,
+            "shirt_rembg_base64": shirt_rembg_base64,
             "status": "success"
         }
+
+    def _crop_and_encode_png(self, rembg_bytes: bytes) -> str:
+        """rembg PNG bytes → 투명 여백 제거 → PNG base64"""
+        from PIL import Image as PILImage
+        import io
+        pil_img = PILImage.open(io.BytesIO(rembg_bytes)).convert("RGBA")
+        bbox = pil_img.getbbox()
+        if bbox:
+            pil_img = pil_img.crop(bbox)
+        buf = io.BytesIO()
+        pil_img.save(buf, format="PNG")
+        return base64.b64encode(buf.getvalue()).decode("utf-8")
 
     def _rgba_to_vis(self, rgba_img):
         """RGBA 이미지를 체커보드 배경 위에 합성하여 시각화"""

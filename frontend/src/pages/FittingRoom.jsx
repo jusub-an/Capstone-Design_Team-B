@@ -7,6 +7,102 @@ const BASE = 'http://localhost:8000';
 const AVATAR_W = 220;
 const AVATAR_H = 550;
 
+// ── extract heightRatio from avatar.measurements (new format: {items,height_ratio}) ──
+function getHeightRatio(avatar) {
+  if (!avatar?.measurements) return 1;
+  try {
+    const m = typeof avatar.measurements === 'string'
+      ? JSON.parse(avatar.measurements)
+      : avatar.measurements;
+    return (m && m.height_ratio) ? m.height_ratio : 1;
+  } catch { return 1; }
+}
+
+// ── compute auto sleeve angle from size measurements (pxPerCm cancels out) ──
+function autoSleeveAngle(sizeInfo) {
+  const gv = (v, d) => (v && v > 0) ? v : d;
+  const shldr  = gv(sizeInfo.shoulder, 45);
+  const chest  = gv(sizeInfo.chest, 50);
+  const slvLen = gv(sizeInfo.sleeve_length, 20);
+  const slvOpn = gv(sizeInfo.sleeve, 16);
+  const dx = (chest - shldr) / 2;
+  const R  = Math.sqrt(slvLen * slvLen + slvOpn * slvOpn);
+  if (R > 0 && Math.abs(dx / R) <= 1) {
+    const deg = (Math.acos(dx / R) - Math.atan2(slvOpn, slvLen)) * 180 / Math.PI;
+    if (!isNaN(deg)) return Math.max(0, Math.min(90, deg)) * Math.PI / 180;
+  }
+  return 65 * Math.PI / 180;
+}
+
+// ── standalone clothing polygon renderer (same algorithm as VirtualFitting) ──
+function drawClothingPolygon(ctx, centerX, startY, sizeInfo, pxPerCm, isTop, isSelected) {
+  const getVal = (v, def) => (v && v > 0) ? v : def;
+  ctx.save();
+  ctx.strokeStyle = '#6366f1';
+  ctx.lineWidth = 2;
+  ctx.fillStyle = isSelected ? 'rgba(99,102,241,0.25)' : 'rgba(99,102,241,0.15)';
+  ctx.beginPath();
+
+  if (isTop) {
+    const neckW    = getVal(sizeInfo.neck, 15)          * pxPerCm;
+    const shldrW   = getVal(sizeInfo.shoulder, 40)      * pxPerCm;
+    const chestW   = getVal(sizeInfo.chest, 50)         * pxPerCm;
+    const totLen   = getVal(sizeInfo.length, 65)        * pxPerCm;
+    const slvLen   = getVal(sizeInfo.sleeve_length, 20) * pxPerCm;
+    const slvOpen  = getVal(sizeInfo.sleeve, 16)        * pxPerCm;
+    const armhole  = 22  * pxPerCm;
+    const shldrDrp = 4   * pxPerCm;
+    const neckDrp  = 4   * pxPerCm;
+    const ang      = autoSleeveAngle(sizeInfo);
+
+    ctx.moveTo(centerX - neckW / 2, startY);
+    ctx.quadraticCurveTo(centerX, startY + neckDrp, centerX + neckW / 2, startY);
+    ctx.lineTo(centerX + shldrW / 2, startY + shldrDrp);
+
+    const rx1 = centerX + shldrW / 2 + slvLen * Math.cos(ang);
+    const ry1 = startY + shldrDrp + slvLen * Math.sin(ang);
+    ctx.lineTo(rx1, ry1);
+    const rx2 = rx1 - slvOpen * Math.sin(ang);
+    const ry2 = ry1 + slvOpen * Math.cos(ang);
+    ctx.lineTo(rx2, ry2);
+
+    ctx.quadraticCurveTo(centerX + chestW / 2, startY + armhole - 2 * pxPerCm, centerX + chestW / 2, startY + armhole);
+    ctx.quadraticCurveTo(centerX + chestW / 2 - 1.5 * pxPerCm, startY + armhole + (totLen - armhole) / 2, centerX + chestW / 2, startY + totLen);
+    ctx.quadraticCurveTo(centerX, startY + totLen + 1.5 * pxPerCm, centerX - chestW / 2, startY + totLen);
+    ctx.quadraticCurveTo(centerX - chestW / 2 + 1.5 * pxPerCm, startY + armhole + (totLen - armhole) / 2, centerX - chestW / 2, startY + armhole);
+
+    const lx2 = centerX - shldrW / 2 - slvLen * Math.cos(ang) + slvOpen * Math.sin(ang);
+    const ly2 = startY + shldrDrp + slvLen * Math.sin(ang) + slvOpen * Math.cos(ang);
+    ctx.quadraticCurveTo(centerX - chestW / 2, startY + armhole - 2 * pxPerCm, lx2, ly2);
+    const lx1 = centerX - shldrW / 2 - slvLen * Math.cos(ang);
+    const ly1 = startY + shldrDrp + slvLen * Math.sin(ang);
+    ctx.lineTo(lx1, ly1);
+    ctx.lineTo(centerX - shldrW / 2, startY + shldrDrp);
+  } else {
+    const waistW   = getVal(sizeInfo.waist, 35)  * pxPerCm;
+    const thighW   = getVal(sizeInfo.thigh, 25)  * pxPerCm;
+    const totLen   = getVal(sizeInfo.length, 100) * pxPerCm;
+    const riseLen  = getVal(sizeInfo.rise, 25)   * pxPerCm;
+    const hemW     = getVal(sizeInfo.hem, 20)    * pxPerCm;
+
+    ctx.moveTo(centerX - waistW / 2, startY);
+    ctx.quadraticCurveTo(centerX, startY + 2 * pxPerCm, centerX + waistW / 2, startY);
+    ctx.quadraticCurveTo(centerX + thighW, startY + riseLen / 2, centerX + thighW, startY + riseLen);
+    ctx.lineTo(centerX + thighW / 2 + hemW / 2, startY + totLen);
+    ctx.quadraticCurveTo(centerX + thighW / 2, startY + totLen + 1.5 * pxPerCm, centerX + thighW / 2 - hemW / 2, startY + totLen);
+    ctx.quadraticCurveTo(centerX + 2 * pxPerCm, startY + riseLen, centerX, startY + riseLen);
+    ctx.quadraticCurveTo(centerX - 2 * pxPerCm, startY + riseLen, centerX - thighW / 2 + hemW / 2, startY + totLen);
+    ctx.quadraticCurveTo(centerX - thighW / 2, startY + totLen + 1.5 * pxPerCm, centerX - thighW / 2 - hemW / 2, startY + totLen);
+    ctx.lineTo(centerX - thighW, startY + riseLen);
+    ctx.quadraticCurveTo(centerX - thighW, startY + riseLen / 2, centerX - waistW / 2, startY);
+  }
+
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
 const CANVAS_W = 380;
 const CANVAS_H = 600;
 const DRAW_H = CANVAS_H * 0.9;       // 540px — avatar draw height
@@ -145,9 +241,17 @@ function FittingRoom() {
     if (already) return;
 
     const p = cartItem.product;
+
+    // build auto-fit params from avatar measurements + clothing size
+    const isTop = p?.category?.name?.includes('상의') ?? true;
+    const sizes = isTop ? p.top_sizes : p.bottom_sizes;
+    const sizeInfo = sizes?.find(s => s.size_name === cartItem.size_name);
+
+    // skip prepare-fitting when polygon mode is available (no image needed)
+    const willUsePolygon = !!(sizeInfo && avatar?.height_cm);
     let fittingUrl = p.fitting_image_url;
 
-    if (!fittingUrl) {
+    if (!fittingUrl && !willUsePolygon) {
       setPreparingLayer(cartItem.product_id);
       try {
         const res = await fetch(`${BASE}/api/products/${cartItem.product_id}/prepare-fitting`, { method: 'POST' });
@@ -160,16 +264,30 @@ function FittingRoom() {
       }
       setPreparingLayer(null);
     }
-
-    // build auto-fit params from avatar measurements + clothing size
-    const isTop = p?.category?.name?.includes('상의') ?? true;
-    const sizes = isTop ? p.top_sizes : p.bottom_sizes;
-    const sizeInfo = sizes?.find(s => s.size_name === cartItem.size_name);
     const autoFitParams = {
       height_cm: avatar?.height_cm || null,
       length_cm: sizeInfo?.length || null,
       isTop,
     };
+
+    // polygon mode: draw measurement-based avatar when we have sizeInfo + avatar height
+    const isPolygon = !!(sizeInfo && avatar?.height_cm);
+
+    let initX, initY, initScale;
+    if (isPolygon) {
+      const heightRatio = getHeightRatio(avatar);
+      const pxPerCm = DRAW_H / (avatar.height_cm * heightRatio);
+      const headH = avatar.height_cm * 0.135;
+      initX     = CANVAS_W / 2; // centerX
+      initY     = isTop
+        ? OFFSET_Y + headH * pxPerCm
+        : OFFSET_Y + avatar.height_cm * heightRatio * 0.42 * pxPerCm;
+      initScale = 1.0;
+    } else {
+      initX     = CANVAS_W / 2 - 60;
+      initY     = OFFSET_Y + DRAW_H * (isTop ? 0.13 : 0.42);
+      initScale = 0.25;
+    }
 
     const layerId = `${cartItem.product_id}_${cartItem.size_name || 'nosize'}_${Date.now()}`;
     const newLayer = {
@@ -181,18 +299,22 @@ function FittingRoom() {
       image_url: p.image_url,
       fitting_image_url: fittingUrl,
       visible: true,
-      x: CANVAS_W / 2 - 60,
-      y: OFFSET_Y + DRAW_H * (isTop ? 0.13 : 0.42),
-      scale: 0.25,
+      x: initX,
+      y: initY,
+      scale: initScale,
       autoFitParams,
+      isPolygon,
+      sizeInfo: sizeInfo || null,
       img: null,
-      imgLoading: true,
+      imgLoading: !isPolygon,
     };
     setLayers(prev => [...prev, newLayer]);
     setSelectedLayerId(layerId);
 
-    const imgSrc = fittingUrl || p.image_url;
-    loadLayerImage(layerId, imgSrc, autoFitParams);
+    if (!isPolygon) {
+      const imgSrc = fittingUrl || p.image_url;
+      loadLayerImage(layerId, imgSrc, autoFitParams);
+    }
   };
 
   // ── remove layer ──────────────────────────────────────────────────
@@ -210,6 +332,20 @@ function FittingRoom() {
   const resetLayerPosition = (layerId) => {
     setLayers(prev => prev.map(l => {
       if (l.id !== layerId) return l;
+      if (l.isPolygon && avatar?.height_cm) {
+        const heightRatio = getHeightRatio(avatar);
+        const pxPerCm = DRAW_H / (avatar.height_cm * heightRatio);
+        const isTop = l.autoFitParams?.isTop ?? true;
+        const headH = avatar.height_cm * 0.135;
+        return {
+          ...l,
+          x: CANVAS_W / 2,
+          y: isTop
+            ? OFFSET_Y + headH * pxPerCm
+            : OFFSET_Y + avatar.height_cm * heightRatio * 0.42 * pxPerCm,
+          scale: 1.0,
+        };
+      }
       if (l.img && l.autoFitParams) {
         const { x, y, scale } = computeAutoFit(l.img, l.autoFitParams);
         return { ...l, x, y, scale };
@@ -220,9 +356,12 @@ function FittingRoom() {
 
   // ── scale selected layer ──────────────────────────────────────────
   const scaleLayer = (layerId, delta) => {
-    setLayers(prev => prev.map(l =>
-      l.id === layerId ? { ...l, scale: Math.max(0.3, Math.min(3.0, l.scale + delta)) } : l
-    ));
+    setLayers(prev => prev.map(l => {
+      if (l.id !== layerId) return l;
+      const min = l.isPolygon ? 0.5 : 0.3;
+      const max = l.isPolygon ? 2.0 : 3.0;
+      return { ...l, scale: Math.max(min, Math.min(max, l.scale + delta)) };
+    }));
   };
 
   // ── draw canvas ───────────────────────────────────────────────────
@@ -260,7 +399,37 @@ function FittingRoom() {
 
     // draw clothing layers (bottom to top)
     layers.forEach(layer => {
-      if (!layer.visible || !layer.img) return;
+      if (!layer.visible) return;
+
+      if (layer.isPolygon && layer.sizeInfo && avatar?.height_cm) {
+        const heightRatio = getHeightRatio(avatar);
+        const pxPerCm = (DRAW_H / (avatar.height_cm * heightRatio)) * layer.scale;
+        const isTop = layer.autoFitParams?.isTop ?? true;
+        drawClothingPolygon(
+          ctx,
+          layer.x,   // centerX
+          layer.y,   // startY
+          layer.sizeInfo,
+          pxPerCm,
+          isTop,
+          layer.id === selectedLayerId,
+        );
+
+        // dashed selection rect around polygon bounding box
+        if (layer.id === selectedLayerId) {
+          const getVal = (v, d) => (v && v > 0) ? v : d;
+          const halfW = getVal(isTop ? layer.sizeInfo.chest : layer.sizeInfo.waist, isTop ? 50 : 35) / 2 * pxPerCm;
+          const totH  = getVal(layer.sizeInfo.length, isTop ? 65 : 100) * pxPerCm;
+          ctx.strokeStyle = '#818cf8';
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([5, 4]);
+          ctx.strokeRect(layer.x - halfW - 4, layer.y - 4, halfW * 2 + 8, totH + 8);
+          ctx.setLineDash([]);
+        }
+        return;
+      }
+
+      if (!layer.img) return;
       const imgW = layer.img.width * layer.scale;
       const imgH = layer.img.height * layer.scale;
       ctx.drawImage(layer.img, layer.x, layer.y, imgW, imgH);
@@ -273,7 +442,7 @@ function FittingRoom() {
         ctx.setLineDash([]);
       }
     });
-  }, [avatarImg, layers, selectedLayerId]);
+  }, [avatarImg, layers, selectedLayerId, avatar]);
 
   useEffect(() => {
     draw();
@@ -283,7 +452,22 @@ function FittingRoom() {
   const getLayerAtPoint = useCallback((px, py) => {
     for (let i = layers.length - 1; i >= 0; i--) {
       const l = layers[i];
-      if (!l.visible || !l.img) continue;
+      if (!l.visible) continue;
+
+      if (l.isPolygon && l.sizeInfo && avatar?.height_cm) {
+        const heightRatio = getHeightRatio(avatar);
+        const pxPerCm = (DRAW_H / (avatar.height_cm * heightRatio)) * l.scale;
+        const isTop = l.autoFitParams?.isTop ?? true;
+        const getVal = (v, d) => (v && v > 0) ? v : d;
+        const halfW = getVal(isTop ? l.sizeInfo.chest : l.sizeInfo.waist, isTop ? 50 : 35) / 2 * pxPerCm;
+        const totH  = getVal(l.sizeInfo.length, isTop ? 65 : 100) * pxPerCm;
+        if (px >= l.x - halfW && px <= l.x + halfW && py >= l.y && py <= l.y + totH) {
+          return l;
+        }
+        continue;
+      }
+
+      if (!l.img) continue;
       const imgW = l.img.width * l.scale;
       const imgH = l.img.height * l.scale;
       if (px >= l.x && px <= l.x + imgW && py >= l.y && py <= l.y + imgH) {
@@ -291,7 +475,7 @@ function FittingRoom() {
       }
     }
     return null;
-  }, [layers]);
+  }, [layers, avatar]);
 
   const getCanvasPos = (e) => {
     const canvas = canvasRef.current;
@@ -358,8 +542,8 @@ function FittingRoom() {
     if (userVal == null || clothingVal == null) return null;
     const diff = userVal - clothingVal;
     let label, color;
-    if (diff < -3) { label = '타이트'; color = '#ef4444'; }
-    else if (diff > 5) { label = '루즈'; color = '#f59e0b'; }
+    if (diff > 3) { label = '타이트'; color = '#ef4444'; }
+    else if (diff < -5) { label = '루즈'; color = '#f59e0b'; }
     else { label = '적정'; color = '#22c55e'; }
     return (
       <span style={{
@@ -601,11 +785,12 @@ function FittingRoom() {
             const isTop = cartItem.product?.category?.name?.includes('상의');
 
             const pairs = isTop ? [
-              { label: '어깨', clothingKey: 'shoulder', avatarKey: 'shoulder' },
-              { label: '가슴', clothingKey: 'chest', avatarKey: 'chest' },
-              { label: '소매', clothingKey: 'sleeve', avatarKey: 'sleeve' },
+              { label: '어깨',     clothingKey: 'shoulder',      avatarKey: 'shoulder' },
+              { label: '가슴',     clothingKey: 'chest',         avatarKey: 'chest' },
+              { label: '소매길이', clothingKey: 'sleeve_length', avatarKey: 'sleeve' },
+              { label: '소매넓이', clothingKey: 'sleeve',        avatarKey: 'arm_width' },
             ] : [
-              { label: '허리', clothingKey: 'waist', avatarKey: 'waist' },
+              { label: '허리',   clothingKey: 'waist', avatarKey: 'waist' },
               { label: '허벅지', clothingKey: 'thigh', avatarKey: 'thigh' },
             ];
 
