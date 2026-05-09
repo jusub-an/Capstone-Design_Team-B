@@ -27,6 +27,14 @@ class ClothingMeasureEngine:
         return math.hypot(p[0] - proj_x, p[1] - proj_y)
 
     def process(self, shirt_image_bytes, a4_image_bytes, shirt_rect, a4_rect, orig_w, orig_h, category_type="Top", shoulder_pts=None):
+        # 난수 고정 — AI 배경제거 결과를 매번 동일하게
+        import random, torch
+        random.seed(42)
+        np.random.seed(42)
+        torch.manual_seed(42)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(42)
+
         debug_stages = {}  # 각 단계별 디버그 이미지 저장
 
         # 0. 원본 크롭 이미지 저장
@@ -137,9 +145,10 @@ class ClothingMeasureEngine:
         T = np.array([[1, 0, dx], [0, 1, dy], [0, 0, 1]], dtype=np.float64)
         M_new = T @ M
 
-        ppcm_w = dst_w / 21.0
-        ppcm_h = dst_h / 29.7
-        ppcm = (ppcm_w + ppcm_h) / 2.0
+        # ppcm 계산 — 픽셀 면적(Area)이 아닌, 강제로 맞춘 A4 픽셀 너비(dst_w)를 사용
+        # 면적을 쓰면 rembg가 A4 모서리를 둥글게 깎아먹었을 때 픽셀이 크게 유실되어 ppcm이 널뛰는 문제가 발생함.
+        # 원근 보정(Perspective Transform) 시 너비를 dst_w로 강제했으므로, dst_w 픽셀 = 21.0cm 가 수학적으로 완벽히 성립함.
+        ppcm = dst_w / 21.0
 
         # 3. 의류 마스크 병합
         full_shirt_mask = np.zeros((int(orig_h), int(orig_w)), dtype=np.uint8)
