@@ -35,6 +35,7 @@ function ProductRegister() {
   const [cvStep, setCvStep] = useState(0); // 0: upload, 1: draw shirt, 2: draw a4, 3: ready
   const [rectShirt, setRectShirt] = useState(null);
   const [rectA4, setRectA4] = useState(null);
+  const [shoulderPts, setShoulderPts] = useState([]);
   const [currentRect, setCurrentRect] = useState(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
@@ -95,7 +96,7 @@ function ProductRegister() {
         if (productSizes.length > 0) {
           setSizes(productSizes.map(s => ({ ...s, id: Math.random() })));
         } else {
-          setSizes([{ id: Date.now(), size_name: 'Free', length: '', chest: '', shoulder: '', sleeve: '', neck: '', waist: '', thigh: '', rise: '', hem: '' }]);
+          setSizes([{ id: Date.now(), size_name: 'Free', length: '', chest: '', shoulder: '', sleeve: '', sleeve_length: '', neck: '', waist: '', thigh: '', rise: '', hem: '' }]);
         }
       }
     } catch (error) {
@@ -218,8 +219,9 @@ function ProductRegister() {
           setCvStep(1);
           setRectShirt(null);
           setRectA4(null);
+          setShoulderPts([]);
           setCurrentRect(null);
-          redrawCanvas(w, h, scale, null, null, null);
+          redrawCanvas(w, h, scale, null, null, null, []);
         };
         img.src = event.target.result;
       };
@@ -227,7 +229,7 @@ function ProductRegister() {
     }
   };
 
-  const redrawCanvas = (w, h, scale, rs, ra, cr) => {
+  const redrawCanvas = (w, h, scale, rs, ra, cr, sPts = []) => {
     const canvas = canvasRef.current;
     if (!canvas || !imgRef.current) return;
     const ctx = canvas.getContext('2d');
@@ -249,6 +251,26 @@ function ProductRegister() {
     if (rs) drawRect(rs, "#ff4444", "의류 (Shirt)");
     if (ra) drawRect(ra, "#4CAF50", "A4 용지");
     
+    if (sPts && sPts.length > 0) {
+      sPts.forEach((pt, idx) => {
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, 6, 0, 2 * Math.PI);
+        ctx.fillStyle = "#ffeb3b";
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = "#000";
+        ctx.stroke();
+      });
+      if (sPts.length === 2) {
+        ctx.beginPath();
+        ctx.moveTo(sPts[0].x, sPts[0].y);
+        ctx.lineTo(sPts[1].x, sPts[1].y);
+        ctx.strokeStyle = "#ffeb3b";
+        ctx.lineWidth = 3;
+        ctx.stroke();
+      }
+    }
+
     if (cr) {
       let color = cvStep === 1 ? "#ff4444" : "#4CAF50";
       ctx.strokeStyle = color;
@@ -271,9 +293,20 @@ function ProductRegister() {
   };
 
   const onDown = (e) => {
-    if (cvStep !== 1 && cvStep !== 2) return;
     e.preventDefault();
     const pos = getPos(e);
+    const isTopItem = formData.category_type === 'Top';
+    if (cvStep === 3 && isTopItem) {
+      const newPts = [...shoulderPts, pos];
+      setShoulderPts(newPts);
+      redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, rectShirt, rectA4, null, newPts);
+      if (newPts.length === 2) {
+        setTimeout(() => setCvStep(4), 300);
+      }
+      return;
+    }
+
+    if (cvStep !== 1 && cvStep !== 2) return;
     setStartPos(pos);
     setIsDrawing(true);
     setCurrentRect({ x: pos.x, y: pos.y, w: 0, h: 0 });
@@ -290,24 +323,30 @@ function ProductRegister() {
       h: Math.abs(pos.y - startPos.y)
     };
     setCurrentRect(newRect);
-    redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, rectShirt, rectA4, newRect);
+    redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, rectShirt, rectA4, newRect, shoulderPts);
   };
 
   const onUp = (e) => {
     if (!isDrawing) return;
     setIsDrawing(false);
+    const isTopItem = formData.category_type === 'Top';
     if (currentRect && currentRect.w > 30 && currentRect.h > 30) {
       if (cvStep === 1) {
         setRectShirt({ ...currentRect });
         setCvStep(2);
-        redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, currentRect, rectA4, null);
+        redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, currentRect, rectA4, null, shoulderPts);
       } else if (cvStep === 2) {
         setRectA4({ ...currentRect });
-        setCvStep(3);
-        redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, rectShirt, currentRect, null);
+        if (isTopItem) {
+          setCvStep(3);
+          setShoulderPts([]);
+        } else {
+          setCvStep(4);
+        }
+        redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, rectShirt, currentRect, null, shoulderPts);
       }
     } else {
-      redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, rectShirt, rectA4, null);
+      redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, rectShirt, rectA4, null, shoulderPts);
     }
     setCurrentRect(null);
   };
@@ -349,6 +388,13 @@ function ProductRegister() {
       reqFormData.append('orig_h', canvasRef.current.height.toString());
       reqFormData.append('category_type', formData.category_type);
 
+      if (formData.category_type === 'Top' && shoulderPts.length === 2) {
+        reqFormData.append('shoulder_x1', shoulderPts[0].x.toString());
+        reqFormData.append('shoulder_y1', shoulderPts[0].y.toString());
+        reqFormData.append('shoulder_x2', shoulderPts[1].x.toString());
+        reqFormData.append('shoulder_y2', shoulderPts[1].y.toString());
+      }
+
       const response = await fetch('http://localhost:8000/api/measure/clothing', {
         method: 'POST',
         body: reqFormData,
@@ -357,7 +403,7 @@ function ProductRegister() {
       if (response.ok) {
         const data = await response.json();
         setCvResultData(data);
-        setCvStep(4);
+        setCvStep(5);
 
         // 비율 기반 비정상 치수 검증
         const validation = validateMeasurements(data, formData.category_type);
@@ -387,7 +433,9 @@ function ProductRegister() {
             ...s,
             length: cvResultData.length_cm,
             chest: cvResultData.chest_cm,
+            shoulder: cvResultData.shoulder_width_cm,
             sleeve: cvResultData.sleeve_width_cm,
+            sleeve_length: cvResultData.sleeve_length_cm > 0 ? cvResultData.sleeve_length_cm : '',
             neck: cvResultData.neck_width_cm
           };
         } else {
@@ -484,8 +532,9 @@ function ProductRegister() {
                 {cvStep === 0 && "사진을 업로드 해주세요."}
                 {cvStep === 1 && <span>원본 이미지에서 <span style={{color:'#f87171'}}>의류 영역</span>을 드래그하여 박스를 쳐주세요.</span>}
                 {cvStep === 2 && <span>원본 이미지에서 <span style={{color:'#4ade80'}}>A4 용지 영역</span>을 드래그하여 박스를 쳐주세요.</span>}
-                {cvStep === 3 && "영역 지정 완료! 분석을 시작하세요."}
-                {cvStep === 4 && "치수 추출 완료! 결과를 확인하고 적용하세요."}
+                {cvStep === 3 && <span>상의 <span style={{color:'#eab308'}}>어깨 양끝 재봉선 상단</span> 2곳을 각각 클릭해주세요.</span>}
+                {cvStep === 4 && "영역 지정 완료! 분석을 시작하세요."}
+                {cvStep === 5 && "치수 추출 완료! 결과를 확인하고 적용하세요."}
               </div>
 
               {/* Step 0: 업로드 */}
@@ -500,8 +549,8 @@ function ProductRegister() {
                 </div>
               )}
 
-              {/* Step 1~3: 캔버스 */}
-              <div className="cv-canvas-container" style={{ display: (cvStep > 0 && cvStep < 4) ? 'flex' : 'none' }}>
+              {/* Step 1~4: 캔버스 */}
+              <div className="cv-canvas-container" style={{ display: (cvStep > 0 && cvStep < 5) ? 'flex' : 'none' }}>
                 <canvas
                   ref={canvasRef}
                   className="cv-canvas"
@@ -514,8 +563,8 @@ function ProductRegister() {
                 ></canvas>
               </div>
 
-              {/* Step 4: 결과 */}
-              {cvStep === 4 && cvResultData && (
+              {/* Step 5: 결과 */}
+              {cvStep === 5 && cvResultData && (
                 <div className="cv-result-container">
                   <div className="cv-result-image">
                     <img src={`data:image/jpeg;base64,${cvResultData.debug_image_base64}`} alt="AI 추출 결과 시각화" />
@@ -524,8 +573,10 @@ function ProductRegister() {
                     <div className="val-box"><span>총장</span><strong>{cvResultData.length_cm} cm</strong></div>
                     {formData.category_type === 'Top' ? (
                       <>
+                        <div className="val-box"><span>어깨너비</span><strong>{cvResultData.shoulder_width_cm} cm</strong></div>
                         <div className="val-box"><span>가슴단면</span><strong>{cvResultData.chest_cm} cm</strong></div>
-                        <div className="val-box"><span>소매끝단면</span><strong>{cvResultData.sleeve_width_cm} cm</strong></div>
+                        <div className="val-box"><span>소매단면</span><strong>{cvResultData.sleeve_width_cm} cm</strong></div>
+                        {cvResultData.sleeve_length_cm > 0 && <div className="val-box"><span>소매길이</span><strong>{cvResultData.sleeve_length_cm} cm</strong></div>}
                         <div className="val-box"><span>넥라인</span><strong>{cvResultData.neck_width_cm} cm</strong></div>
                       </>
                     ) : (
@@ -607,35 +658,35 @@ function ProductRegister() {
 
               {/* 액션 버튼 */}
               <div className="cv-actions">
-                {(cvStep > 0 && cvStep < 4) && (
+                {(cvStep > 0 && cvStep < 5) && (
                   <>
                     <button className="cv-btn tertiary" onClick={() => {
-                      setCvStep(0); setCvImage(null); setRectShirt(null); setRectA4(null); setCurrentRect(null);
+                      setCvStep(0); setCvImage(null); setRectShirt(null); setRectA4(null); setCurrentRect(null); setShoulderPts([]);
                       imgRef.current = null;
                       if (canvasRef.current) { canvasRef.current.getContext('2d').clearRect(0, 0, canvasRef.current.width, canvasRef.current.height); }
                     }} disabled={cvLoading}>사진 변경</button>
                     <button className="cv-btn secondary" onClick={() => {
-                      setCvStep(1); setRectShirt(null); setRectA4(null); setCurrentRect(null);
-                      redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, null, null, null);
+                      setCvStep(1); setRectShirt(null); setRectA4(null); setCurrentRect(null); setShoulderPts([]);
+                      redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, null, null, null, []);
                     }} disabled={cvLoading}>다시 그리기</button>
                   </>
                 )}
-                {cvStep === 3 && (
+                {cvStep === 4 && (
                   <button className="cv-btn primary" onClick={handleAnalyze} disabled={cvLoading}>
                     {cvLoading ? '분석 중...' : '🚀 AI 분석 시작'}
                   </button>
                 )}
-                {cvStep === 4 && (
+                {cvStep === 5 && (
                   <>
                     <button className="cv-btn tertiary" onClick={() => {
-                      setCvStep(0); setCvImage(null); setRectShirt(null); setRectA4(null); setCurrentRect(null);
+                      setCvStep(0); setCvImage(null); setRectShirt(null); setRectA4(null); setCurrentRect(null); setShoulderPts([]);
                       setCvResultData(null); setMeasurementWarnings([]);
                       imgRef.current = null;
                       if (canvasRef.current) { canvasRef.current.getContext('2d').clearRect(0, 0, canvasRef.current.width, canvasRef.current.height); }
                     }}>사진 변경</button>
                     <button className="cv-btn secondary" onClick={() => {
-                      setCvStep(1); setRectShirt(null); setRectA4(null); setCurrentRect(null);
-                      redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, null, null, null);
+                      setCvStep(1); setRectShirt(null); setRectA4(null); setCurrentRect(null); setShoulderPts([]);
+                      redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, null, null, null, []);
                     }}>다시 측정</button>
                     <button className="cv-btn primary" onClick={handleApplyMeasurements}>✅ 치수 적용</button>
                   </>
@@ -682,7 +733,7 @@ function ProductRegister() {
               <button 
                 type="button" 
                 className="add-size-btn"
-                onClick={() => setSizes(prev => [...prev, { id: Date.now(), size_name: '', length: '', chest: '', shoulder: '', sleeve: '', neck: '', waist: '', thigh: '', rise: '', hem: '' }])}
+                onClick={() => setSizes(prev => [...prev, { id: Date.now(), size_name: '', length: '', chest: '', shoulder: '', sleeve: '', sleeve_length: '', neck: '', waist: '', thigh: '', rise: '', hem: '' }])}
               >
                 + 사이즈 추가
               </button>
@@ -741,8 +792,12 @@ function ProductRegister() {
                           <input type="number" step="0.1" value={size.chest || ''} onChange={(e) => setSizes(prev => prev.map(s => s.id === size.id ? {...s, chest: e.target.value} : s))} placeholder="0.0" />
                         </div>
                         <div className="m-input">
-                          <span>소매길이</span>
+                          <span>소매단면</span>
                           <input type="number" step="0.1" value={size.sleeve || ''} onChange={(e) => setSizes(prev => prev.map(s => s.id === size.id ? {...s, sleeve: e.target.value} : s))} placeholder="0.0" />
+                        </div>
+                        <div className="m-input">
+                          <span>소매길이</span>
+                          <input type="number" step="0.1" value={size.sleeve_length || ''} onChange={(e) => setSizes(prev => prev.map(s => s.id === size.id ? {...s, sleeve_length: e.target.value} : s))} placeholder="0.0" />
                         </div>
                         <div className="m-input">
                           <span>넥라인</span>

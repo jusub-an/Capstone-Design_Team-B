@@ -106,16 +106,16 @@ function BodyMeasure() {
         }
         setScaleFactor(scale);
 
-        // 다음 렌더 사이클에서 캔버스 크기 설정
-        requestAnimationFrame(() => {
+        setCropStep(1);
+        // React가 캔버스를 DOM에 렌더링할 시간을 충분히 부여
+        setTimeout(() => {
           const canvas = canvasRef.current;
           if (canvas) {
             canvas.width = w;
             canvas.height = h;
             redrawCanvas(w, h, scale, null, null);
           }
-        });
-        setCropStep(1);
+        }, 100);
       };
       img.src = event.target.result;
     };
@@ -244,7 +244,10 @@ function BodyMeasure() {
       const fd = new FormData();
       fd.append('user_email', userEmail);
       fd.append('height_cm', heightCm);
-      fd.append('measurements', JSON.stringify(result.measurements));
+      fd.append('measurements', JSON.stringify({
+        items: result.measurements,
+        height_ratio: result.height_ratio ?? 1,
+      }));
       fd.append('gray_mask', base64ToBlob(result.gray_mask_base64), 'gray_mask.jpg');
       fd.append('person_extracted', base64ToBlob(result.person_extracted_base64), 'person_extracted.jpg');
       const res = await axios.post('http://localhost:8000/api/avatar/save', fd, {

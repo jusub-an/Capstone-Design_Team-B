@@ -95,13 +95,24 @@ class BodyMeasureEngine:
         raw_mask  = (alpha_arr > 128).astype(np.uint8) * 255
         mask = self._build_binary_mask(raw_mask, w)
 
-        # ── 스케일 계산 (HTML: topHeadY ~ heelYpx) ──
+        # ── 스케일 계산 (사용자 요청: 정수리 ~ 발꿈치) ──
         top_y = self._find_top_head_y(mask, landmarks)
         bottom_y = self._find_bottom_foot_y(mask, landmarks)
         pixel_height = float(bottom_y - top_y)
         if pixel_height <= 0:
             raise ValueError("신체 높이 픽셀 계산에 실패했습니다.")
         cm_per_pixel = float(user_height_cm / pixel_height)
+
+        # ── 전체 실루엣(정수리 ~ 발끝) 높이 비율 계산 (프론트엔드 가상 피팅 보정용) ──
+        actual_bottom_y = h - 1
+        for y in range(h - 1, -1, -1):
+            if np.any(mask[y, :] > 0):
+                actual_bottom_y = y
+                break
+        total_pixel_height = float(actual_bottom_y - top_y)
+        if total_pixel_height <= 0:
+            total_pixel_height = pixel_height
+        height_ratio = total_pixel_height / pixel_height
 
         # ── 랜드마크 픽셀 좌표 ──
         lm11, lm12 = landmarks[11], landmarks[12]   # 어깨
@@ -167,14 +178,13 @@ class BodyMeasureEngine:
 
         # ══════════════════════════════════════
         # 5. 허리너비 (→ 하의 waist)
-        #    겨드랑이 아래 ~ 골반 구간에서 최소 폭을 찾아 허리로 사용
-        #    최소 폭 위치가 곧 실제 허리선
+        #    바지 허리선이 위치하는 실제 신체 부위(골반 약간 위쪽)를 측정
+        #    (hip_y에서 위로 약 15% 지점)
         # ══════════════════════════════════════
-        waist_scan_start = armpit_y + 15 if armpit_y is not None else int(shoulder_y + (hip_y - shoulder_y) * 0.4)
-        waist_span = self._find_min_width_in_range(mask, spine_x, int(waist_scan_start), hip_y)
+        pants_waist_y = int(hip_y - (hip_y - shoulder_y) * 0.15)
+        waist_span = self._find_torso_width_at_y(mask, spine_x, pants_waist_y, band=5)
         if waist_span is None:
-            below_navel_y = shoulder_y + (hip_y - shoulder_y) * 0.85
-            waist_span = {"width_px": 10, "p_start": {"x": spine_x - 5, "y": below_navel_y}, "p_end": {"x": spine_x + 5, "y": below_navel_y}}
+            waist_span = {"width_px": 10, "p_start": {"x": float(spine_x - 5), "y": float(pants_waist_y)}, "p_end": {"x": float(spine_x + 5), "y": float(pants_waist_y)}}
 
         # ══════════════════════════════════════
         # 7. 허벅지너비 (→ 하의 thigh)
@@ -187,14 +197,14 @@ class BodyMeasureEngine:
 
         # ══════════════════════════════════════
         # 8. 밑위길이 (→ 하의 rise)
-        #    골반(hip_y, 배꼽 아래) ~ 사타구니 Y 수직 거리
+        #    바지 허리선(pants_waist_y) ~ 사타구니 Y 수직 거리
         # ══════════════════════════════════════
         rise_px = None
         rise_p_start = rise_p_end = None
 
         if crotch is not None:
-            rise_px = abs(crotch["y"] - hip_y)
-            rise_p_start = {"x": float(spine_x), "y": float(hip_y)}
+            rise_px = abs(crotch["y"] - pants_waist_y)
+            rise_p_start = {"x": float(spine_x), "y": float(pants_waist_y)}
             rise_p_end   = {"x": float(spine_x), "y": float(crotch["y"])}
 
         # ══════════════════════════════════════
@@ -333,6 +343,7 @@ class BodyMeasureEngine:
             "image_height": h,
             "pixel_height": round(pixel_height, 1),
             "cm_per_pixel": round(cm_per_pixel, 4),
+            "height_ratio": round(height_ratio, 4),
             "anchors": {
                 "left_armpit":  armpits["left_armpit"],
                 "right_armpit": armpits["right_armpit"],
@@ -449,9 +460,7 @@ class BodyMeasureEngine:
         return max(0, int(landmarks[0]["y"]))
 
     def _find_bottom_foot_y(self, mask: np.ndarray, landmarks) -> int:
-        for y in range(mask.shape[0] - 1, -1, -1):
-            if np.any(mask[y, :] > 0):
-                return y
+        # 사용자의 요청에 따라 실루엣의 끝(발가락) 대신 MediaPipe에서 추출한 발꿈치(heel) 랜드마크 29, 30 중 더 낮은 Y좌표를 키의 끝으로 사용합니다.
         return int(max(landmarks[29]["y"], landmarks[30]["y"]))
 
     def _find_shoulder_edge(self, mask: np.ndarray,
@@ -824,8 +833,8 @@ class BodyMeasureEngine:
         
         h, w = mask.shape[:2]
         
-        # 30% ~ 60% 구간에서 가장 두꺼운 부분 찾기
-        for t in [0.3, 0.4, 0.5, 0.6]:
+        # 50% ~ 80% 구간(팔 아래쪽)에서 가장 두꺼운 부분 찾기
+        for t in [0.5, 0.6, 0.7, 0.8]:
             cx = lm_shoulder["x"] + dx * t
             cy = lm_shoulder["y"] + dy * t
             

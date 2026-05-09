@@ -69,6 +69,8 @@ def auto_migrate_db():
             "ALTER TABLE products ADD review_count INTEGER DEFAULT 0",
             "ALTER TABLE products ADD wish_count INTEGER DEFAULT 0",
             "ALTER TABLE products ADD fitting_image_url VARCHAR2(500)",
+            "ALTER TABLE top_sizes ADD sleeve_length NUMBER(6,2)",
+            "ALTER TABLE size_review ADD sleeve_length NUMBER(6,2)",
         ]:
             try:
                 conn.execute(text(col_ddl))
@@ -223,6 +225,7 @@ async def measure_body(
         "warnings":                result["warnings"],
         "measurements":            result["measurements"],
         "cm_per_pixel":            result["cm_per_pixel"],
+        "height_ratio":            result.get("height_ratio", 1.0),
         "debug_image_base64":      _encode(result["debug_image"]),
         "person_extracted_base64": _encode(result["person_extracted"]),
         "gray_mask_base64":        _encode(result["gray_mask"]),
@@ -255,6 +258,10 @@ async def measure_clothing(
     orig_w: float = Form(...),
     orig_h: float = Form(...),
     category_type: str = Form('Top'),
+    shoulder_x1: float = Form(None),
+    shoulder_y1: float = Form(None),
+    shoulder_x2: float = Form(None),
+    shoulder_y2: float = Form(None),
 ):
     shirt_bytes = await shirt_image.read()
     a4_bytes = await a4_image.read()
@@ -264,12 +271,18 @@ async def measure_clothing(
 
     try:
         engine = get_clothing_measure_engine()
+        
+        shoulder_pts = None
+        if shoulder_x1 is not None and shoulder_y1 is not None and shoulder_x2 is not None and shoulder_y2 is not None:
+            shoulder_pts = [(shoulder_x1, shoulder_y1), (shoulder_x2, shoulder_y2)]
+
         result = await run_in_threadpool(
             engine.process, 
             shirt_bytes, a4_bytes, 
             shirt_rect, a4_rect, 
             orig_w, orig_h,
-            category_type
+            category_type,
+            shoulder_pts
         )
         return result
     except ValueError as e:
@@ -363,6 +376,7 @@ def create_product(
                         chest=to_float(s.get("chest")),
                         shoulder=to_float(s.get("shoulder")),
                         sleeve=to_float(s.get("sleeve")),
+                        sleeve_length=to_float(s.get("sleeve_length")),
                         neck=to_float(s.get("neck"))
                     )
                 else:
@@ -432,6 +446,7 @@ def update_product(
                     chest=to_float(s.get("chest")),
                     shoulder=to_float(s.get("shoulder")),
                     sleeve=to_float(s.get("sleeve")),
+                    sleeve_length=to_float(s.get("sleeve_length")),
                     neck=to_float(s.get("neck"))
                 )
             else:
@@ -624,6 +639,7 @@ async def create_size_review(
     chest_or_waist: Optional[float] = Form(None),
     shoulder_or_thigh: Optional[float] = Form(None),
     sleeve_or_rise: Optional[float] = Form(None),
+    sleeve_length: Optional[float] = Form(None),
     neck_or_hem: Optional[float] = Form(None),
     debug_image: UploadFile = File(...),
     db: Session = Depends(get_db)
@@ -641,6 +657,7 @@ async def create_size_review(
             existing_review.chest_or_waist = chest_or_waist
             existing_review.shoulder_or_thigh = shoulder_or_thigh
             existing_review.sleeve_or_rise = sleeve_or_rise
+            existing_review.sleeve_length = sleeve_length
             existing_review.neck_or_hem = neck_or_hem
 
             # 기존 이미지 파일 삭제
@@ -662,6 +679,7 @@ async def create_size_review(
                 chest_or_waist=chest_or_waist,
                 shoulder_or_thigh=shoulder_or_thigh,
                 sleeve_or_rise=sleeve_or_rise,
+                sleeve_length=sleeve_length,
                 neck_or_hem=neck_or_hem
             )
             db.add(new_review)

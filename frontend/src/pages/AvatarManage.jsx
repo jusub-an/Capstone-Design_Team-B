@@ -33,7 +33,15 @@ function AvatarManage() {
       .catch(() => setLoading(false));
   }, [userEmail]);
 
-  const measurements = Array.isArray(avatar?.measurements) ? avatar.measurements : [];
+  const parsedMeasurements = (() => {
+    if (!avatar?.measurements) return { items: [], height_ratio: 1 };
+    try {
+      const m = typeof avatar.measurements === 'string' ? JSON.parse(avatar.measurements) : avatar.measurements;
+      if (Array.isArray(m)) return { items: m, height_ratio: 1 };
+      return { items: m?.items ?? [], height_ratio: m?.height_ratio ?? 1 };
+    } catch(e) { return { items: [], height_ratio: 1 }; }
+  })();
+  const measurements = parsedMeasurements.items;
 
   const imgUrl = avatar
     ? (imgMode === 'gray' ? avatar.gray_mask_url : avatar.person_extracted_url)

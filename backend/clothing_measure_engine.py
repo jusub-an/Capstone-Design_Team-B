@@ -26,7 +26,15 @@ class ClothingMeasureEngine:
         proj_y = a[1] + u * (b[1] - a[1])
         return math.hypot(p[0] - proj_x, p[1] - proj_y)
 
-    def process(self, shirt_image_bytes, a4_image_bytes, shirt_rect, a4_rect, orig_w, orig_h, category_type="Top"):
+    def process(self, shirt_image_bytes, a4_image_bytes, shirt_rect, a4_rect, orig_w, orig_h, category_type="Top", shoulder_pts=None):
+        # 난수 고정 — AI 배경제거 결과를 매번 동일하게
+        import random, torch
+        random.seed(42)
+        np.random.seed(42)
+        torch.manual_seed(42)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(42)
+
         debug_stages = {}  # 각 단계별 디버그 이미지 저장
 
         # 0. 원본 크롭 이미지 저장
@@ -137,9 +145,10 @@ class ClothingMeasureEngine:
         T = np.array([[1, 0, dx], [0, 1, dy], [0, 0, 1]], dtype=np.float64)
         M_new = T @ M
 
-        ppcm_w = dst_w / 21.0
-        ppcm_h = dst_h / 29.7
-        ppcm = (ppcm_w + ppcm_h) / 2.0
+        # ppcm 계산 — 픽셀 면적(Area)이 아닌, 강제로 맞춘 A4 픽셀 너비(dst_w)를 사용
+        # 면적을 쓰면 rembg가 A4 모서리를 둥글게 깎아먹었을 때 픽셀이 크게 유실되어 ppcm이 널뛰는 문제가 발생함.
+        # 원근 보정(Perspective Transform) 시 너비를 dst_w로 강제했으므로, dst_w 픽셀 = 21.0cm 가 수학적으로 완벽히 성립함.
+        ppcm = dst_w / 21.0
 
         # 3. 의류 마스크 병합
         full_shirt_mask = np.zeros((int(orig_h), int(orig_w)), dtype=np.uint8)
@@ -429,6 +438,49 @@ class ClothingMeasureEngine:
         draw_point(neck_r, (255, 255, 100), "Neck R")
         draw_line(neck_l, neck_r, (255, 255, 100), f"Neck {round(neck_cm,1)}cm")
 
+        shoulder_cm = 0
+        sleeve_length_cm = 0
+        if shoulder_pts is not None:
+            sh_arr = np.array([[shoulder_pts[0]], [shoulder_pts[1]]], dtype=np.float32)
+            warped_sh = cv2.perspectiveTransform(sh_arr, M_new)
+            sh_x1, sh_y1 = warped_sh[0][0]
+            sh_x2, sh_y2 = warped_sh[1][0]
+            shoulder_cm = abs(sh_x1 - sh_x2) / ppcm
+            avg_y = (sh_y1 + sh_y2) / 2
+            
+            # --- 소매 길이 측정 ---
+            sh_l_x = min(sh_x1, sh_x2)
+            sh_r_x = max(sh_x1, sh_x2)
+            
+            def get_shoulder_seam_y(cx):
+                ix = int(cx)
+                if 0 <= ix < warped_shirt_mask.shape[1]:
+                    for iy in range(warped_shirt_mask.shape[0]):
+                        if warped_shirt_mask[iy, ix] > 0:
+                            return iy
+                return int(avg_y)
+                
+            left_seam_y = get_shoulder_seam_y(sh_l_x)
+            right_seam_y = get_shoulder_seam_y(sh_r_x)
+            
+            left_seam_pt = (sh_l_x, left_seam_y)
+            right_seam_pt = (sh_r_x, right_seam_y)
+            
+            sleeve_l_len = self.dist(left_seam_pt, sl_top)
+            sleeve_r_len = self.dist(right_seam_pt, sr_top)
+            
+            sleeve_length_cm = (sleeve_l_len + sleeve_r_len) / 2 / ppcm
+            
+            # 그리기
+            draw_point(left_seam_pt, (255, 165, 0), "Seam L")
+            draw_point(right_seam_pt, (255, 165, 0), "Seam R")
+            draw_line(left_seam_pt, sl_top, (255, 165, 0), "Slv Len")
+            draw_line(right_seam_pt, sr_top, (255, 165, 0), f"Slv Len {round(sleeve_length_cm,1)}cm")
+
+            draw_point((sh_x1, sh_y1), (0, 255, 255), "Shoulder L")
+            draw_point((sh_x2, sh_y2), (0, 255, 255), "Shoulder R")
+            draw_line((sh_x1, avg_y), (sh_x2, avg_y), (0, 255, 255), f"Shoulder {round(shoulder_cm,1)}cm")
+
         debug_base64 = self._encode_img(debug_img)
 
         # 디버그: 최종 결과 이미지
@@ -437,7 +489,9 @@ class ClothingMeasureEngine:
         return {
             "length_cm": round(length_cm, 1),
             "chest_cm": round(chest_cm, 1),
+            "shoulder_width_cm": round(shoulder_cm, 1) if shoulder_pts else 0.0,
             "sleeve_width_cm": round(sle_wid_cm, 1),
+            "sleeve_length_cm": round(sleeve_length_cm, 1) if shoulder_pts else 0.0,
             "neck_width_cm": round(neck_cm, 1),
             "debug_image_base64": debug_base64,
             "debug_stages": debug_stages,

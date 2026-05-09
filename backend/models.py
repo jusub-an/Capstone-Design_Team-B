@@ -52,6 +52,7 @@ class TopSize(Base):
     chest = Column(Float, nullable=True)
     shoulder = Column(Float, nullable=True)
     sleeve = Column(Float, nullable=True)
+    sleeve_length = Column(Float, nullable=True)
     neck = Column(Float, nullable=True)
     product = relationship("Product", back_populates="top_sizes")
 
@@ -115,7 +116,8 @@ class SizeReview(Base):
     length = Column(Float, nullable=True)
     chest_or_waist = Column(Float, nullable=True)  # 상의: 가슴, 하의: 허리
     shoulder_or_thigh = Column(Float, nullable=True) # 상의: 어깨, 하의: 허벅지
-    sleeve_or_rise = Column(Float, nullable=True)  # 상의: 소매, 하의: 밑위
+    sleeve_or_rise = Column(Float, nullable=True)  # 상의: 소매단면, 하의: 밑위
+    sleeve_length = Column(Float, nullable=True)   # 상의: 소매길이
     neck_or_hem = Column(Float, nullable=True)    # 상의: 넥라인, 하의: 밑단
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
