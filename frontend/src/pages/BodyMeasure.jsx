@@ -106,16 +106,16 @@ function BodyMeasure() {
         }
         setScaleFactor(scale);
 
-        // 다음 렌더 사이클에서 캔버스 크기 설정
-        requestAnimationFrame(() => {
+        setCropStep(1);
+        // React가 캔버스를 DOM에 렌더링할 시간을 충분히 부여
+        setTimeout(() => {
           const canvas = canvasRef.current;
           if (canvas) {
             canvas.width = w;
             canvas.height = h;
             redrawCanvas(w, h, scale, null, null);
           }
-        });
-        setCropStep(1);
+        }, 100);
       };
       img.src = event.target.result;
     };
