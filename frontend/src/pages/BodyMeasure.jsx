@@ -24,9 +24,11 @@ function BodyMeasure() {
   const username = sessionStorage.getItem('username') || 'User';
   const isLoggedIn = !!sessionStorage.getItem('token');
   const fileInputRef = useRef(null);
+  const sideFileInputRef = useRef(null);
 
   // 기존 상태
   const [image, setImage] = useState(null);
+  const [sideImage, setSideImage] = useState(null);
   const [heightCm, setHeightCm] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
@@ -47,6 +49,16 @@ function BodyMeasure() {
   const [currentRect, setCurrentRect] = useState(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
+
+  // 측면 사진 캔버스 크롭
+  const sideCanvasRef = useRef(null);
+  const sideImgRef = useRef(null);
+  const [sideSf, setSideSf] = useState(1);
+  const [sideCropStep, setSideCropStep] = useState(0);
+  const [sideRectBody, setSideRectBody] = useState(null);
+  const [sideCurrentRect, setSideCurrentRect] = useState(null);
+  const [sideIsDrawing, setSideIsDrawing] = useState(false);
+  const [sideStartPos, setSideStartPos] = useState({ x: 0, y: 0 });
 
   const imagePreview = useMemo(() => (image ? URL.createObjectURL(image) : null), [image]);
 
@@ -78,6 +90,29 @@ function BodyMeasure() {
       ctx.lineWidth = 2;
       ctx.strokeRect(cr.x, cr.y, cr.w, cr.h);
       ctx.setLineDash([]);
+    }
+  }, []);
+
+  const sideRedrawCanvas = useCallback((w, h, rb, cr) => {
+    const canvas = sideCanvasRef.current;
+    if (!canvas || !sideImgRef.current) return;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(sideImgRef.current, 0, 0, w, h);
+    const drawRect = (r, color, text) => {
+      ctx.strokeStyle = color; ctx.lineWidth = 3;
+      ctx.strokeRect(r.x, r.y, r.w, r.h);
+      ctx.font = "bold 14px sans-serif";
+      const tw = ctx.measureText(text).width;
+      ctx.fillStyle = "rgba(0,0,0,0.6)";
+      ctx.fillRect(r.x, r.y - 22, tw + 10, 22);
+      ctx.fillStyle = color;
+      ctx.fillText(text, r.x + 5, r.y - 6);
+    };
+    if (rb) drawRect(rb, "#6e8efb", "신체 영역");
+    if (cr) {
+      ctx.strokeStyle = "#6e8efb"; ctx.setLineDash([5, 5]); ctx.lineWidth = 2;
+      ctx.strokeRect(cr.x, cr.y, cr.w, cr.h); ctx.setLineDash([]);
     }
   }, []);
 
@@ -118,6 +153,30 @@ function BodyMeasure() {
         }, 100);
       };
       img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSideImageChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setSideImage(file);
+    setSideRectBody(null); setSideCurrentRect(null); setSideCropStep(0);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        sideImgRef.current = img;
+        const MAX_W = 700, MAX_H = Math.max(window.innerHeight * 0.5, 350);
+        let w = img.width, h = img.height, sc = 1;
+        if (w > MAX_W || h > MAX_H) { sc = Math.min(MAX_W / w, MAX_H / h); w = Math.round(w * sc); h = Math.round(h * sc); }
+        setSideSf(sc); setSideCropStep(1);
+        setTimeout(() => {
+          const canvas = sideCanvasRef.current;
+          if (canvas) { canvas.width = w; canvas.height = h; sideRedrawCanvas(w, h, null, null); }
+        }, 100);
+      };
+      img.src = ev.target.result;
     };
     reader.readAsDataURL(file);
   };
@@ -181,10 +240,55 @@ function BodyMeasure() {
     return new Promise((res) => temp.toBlob(res, 'image/jpeg', 0.92));
   };
 
+  const sideGetPos = (e) => {
+    const canvas = sideCanvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    return { x: (clientX - rect.left) * (canvas.width / rect.width), y: (clientY - rect.top) * (canvas.height / rect.height) };
+  };
+
+  const sideOnDown = (e) => {
+    if (sideCropStep !== 1) return;
+    e.preventDefault();
+    const pos = sideGetPos(e);
+    setSideStartPos(pos); setSideIsDrawing(true);
+    setSideCurrentRect({ x: pos.x, y: pos.y, w: 0, h: 0 });
+  };
+
+  const sideOnMove = (e) => {
+    if (!sideIsDrawing) return;
+    e.preventDefault();
+    const pos = sideGetPos(e);
+    const nr = { x: Math.min(sideStartPos.x, pos.x), y: Math.min(sideStartPos.y, pos.y), w: Math.abs(pos.x - sideStartPos.x), h: Math.abs(pos.y - sideStartPos.y) };
+    setSideCurrentRect(nr);
+    sideRedrawCanvas(sideCanvasRef.current.width, sideCanvasRef.current.height, sideRectBody, nr);
+  };
+
+  const sideOnUp = () => {
+    if (!sideIsDrawing) return;
+    setSideIsDrawing(false);
+    if (sideCurrentRect && sideCurrentRect.w > 30 && sideCurrentRect.h > 30) {
+      setSideRectBody({ ...sideCurrentRect }); setSideCropStep(2);
+      sideRedrawCanvas(sideCanvasRef.current.width, sideCanvasRef.current.height, sideCurrentRect, null);
+    } else {
+      sideRedrawCanvas(sideCanvasRef.current.width, sideCanvasRef.current.height, sideRectBody, null);
+    }
+    setSideCurrentRect(null);
+  };
+
+  const sideCropToBlob = (rect) => {
+    const temp = document.createElement('canvas');
+    temp.width = Math.round(rect.w / sideSf); temp.height = Math.round(rect.h / sideSf);
+    temp.getContext('2d').drawImage(sideImgRef.current, rect.x / sideSf, rect.y / sideSf, rect.w / sideSf, rect.h / sideSf, 0, 0, temp.width, temp.height);
+    return new Promise((res) => temp.toBlob(res, 'image/jpeg', 0.92));
+  };
+
   const handleAnalyze = async () => {
     if (!image) { setError('전신 사진을 업로드해주세요.'); return; }
     if (!heightCm || Number(heightCm) <= 0) { setError('올바른 키(cm)를 입력해주세요.'); return; }
-    if (cropStep < 2 || !rectBody) { setError('사진에서 신체 영역을 드래그하여 지정해주세요.'); return; }
+    if (cropStep < 2 || !rectBody) { setError('정면 사진에서 신체 영역을 드래그하여 지정해주세요.'); return; }
+    if (sideImage && sideCropStep < 2) { setError('측면 사진에서 신체 영역을 드래그하여 지정해주세요.'); return; }
 
     setLoading(true);
     setError('');
@@ -196,6 +300,10 @@ function BodyMeasure() {
       const formData = new FormData();
       formData.append('image', bodyBlob, 'body_crop.jpg');
       formData.append('height_cm', parseFloat(heightCm));
+      if (sideRectBody) {
+        const sideBlob = await sideCropToBlob(sideRectBody);
+        formData.append('side_image', sideBlob, 'side_crop.jpg');
+      }
 
       const res = await axios.post('http://localhost:8000/api/measure', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -470,6 +578,78 @@ function BodyMeasure() {
             />
           </div>
 
+          {/* 측면 사진 (선택) */}
+          <div style={{ marginBottom: '20px' }}>
+            <label style={{ display: 'block', fontWeight: 600, marginBottom: '6px', color: '#333' }}>
+              측면 사진 <span style={{ fontWeight: 400, color: '#888', fontSize: '0.85rem' }}>(선택 · 가슴둘레·허리둘레 측정용)</span>
+            </label>
+
+            {sideCropStep === 0 ? (
+              <div
+                onClick={() => sideFileInputRef.current.click()}
+                style={{
+                  border: '2px dashed #c0c8e8', borderRadius: '12px',
+                  padding: '24px', textAlign: 'center', cursor: 'pointer',
+                  background: '#f5f7ff', transition: 'border-color 0.2s',
+                  display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'center',
+                }}
+                onMouseEnter={e => e.currentTarget.style.borderColor = '#6e8efb'}
+                onMouseLeave={e => e.currentTarget.style.borderColor = '#c0c8e8'}
+              >
+                <Upload size={20} color="#aaa" />
+                <span style={{ fontSize: '0.88rem', color: '#aaa' }}>측면 전신 사진 업로드 (선택)</span>
+              </div>
+            ) : (
+              <>
+                <div style={{
+                  background: sideCropStep === 1 ? '#e8f0fe' : '#e8fbe8',
+                  borderRadius: '10px', padding: '10px 14px', marginBottom: '10px',
+                  fontSize: '0.88rem', fontWeight: 500,
+                  color: sideCropStep === 1 ? '#1a56db' : '#27ae60',
+                  display: 'flex', alignItems: 'center', gap: '8px',
+                }}>
+                  {sideCropStep === 1 && '👆 측면 사진에서 신체 영역을 드래그하여 박스를 그려주세요.'}
+                  {sideCropStep === 2 && <><CheckCircle size={16} /> 측면 신체 영역이 지정되었습니다.</>}
+                </div>
+                <div style={{
+                  display: 'flex', justifyContent: 'center',
+                  background: '#fafafa', borderRadius: '14px', padding: '8px',
+                  border: '1px solid #e8e8e8',
+                }}>
+                  <canvas
+                    ref={sideCanvasRef}
+                    style={{ maxWidth: '100%', borderRadius: '10px', cursor: sideCropStep === 1 ? 'crosshair' : 'default', touchAction: 'none' }}
+                    onMouseDown={sideOnDown} onMouseMove={sideOnMove} onMouseUp={sideOnUp}
+                    onTouchStart={sideOnDown} onTouchMove={sideOnMove} onTouchEnd={sideOnUp}
+                  />
+                </div>
+                <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                  <button onClick={() => sideFileInputRef.current.click()}
+                    style={{ fontSize: '0.8rem', color: '#6e8efb', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                    사진 변경
+                  </button>
+                  <button onClick={() => { setSideImage(null); setSideCropStep(0); setSideRectBody(null); sideFileInputRef.current.value = ''; }}
+                    style={{ fontSize: '0.8rem', color: '#e74c3c', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                    삭제
+                  </button>
+                  {sideRectBody && (
+                    <button onClick={() => { setSideRectBody(null); setSideCropStep(1); sideRedrawCanvas(sideCanvasRef.current.width, sideCanvasRef.current.height, null, null); }}
+                      style={{ fontSize: '0.8rem', color: '#e67e22', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                      다시 그리기
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+
+            <input
+              ref={sideFileInputRef}
+              type="file" accept="image/*"
+              style={{ display: 'none' }}
+              onChange={handleSideImageChange}
+            />
+          </div>
+
           <div style={{ marginBottom: '20px' }}>
             <label style={{ display: 'block', fontWeight: 600, marginBottom: '8px', color: '#333' }}>
               키 (cm)
@@ -502,20 +682,26 @@ function BodyMeasure() {
             </div>
           )}
 
-          <button
-            onClick={handleAnalyze}
-            disabled={loading || cropStep < 2}
-            style={{
-              width: '100%', padding: '13px',
-              background: (loading || cropStep < 2) ? '#b0bec5' : 'linear-gradient(135deg, #6e8efb, #a777e3)',
-              color: 'white', border: 'none', borderRadius: '12px',
-              fontSize: '1rem', fontWeight: 600,
-              cursor: (loading || cropStep < 2) ? 'not-allowed' : 'pointer',
-              transition: 'opacity 0.2s',
-            }}
-          >
-            {loading ? 'AI 분석 중... (10~30초 소요)' : cropStep < 2 ? '신체 영역을 먼저 지정해주세요' : '🚀 측정 시작'}
-          </button>
+          {(() => {
+            const sideNotReady = sideImage && sideCropStep < 2;
+            const btnDisabled = loading || cropStep < 2 || sideNotReady;
+            const btnText = loading
+              ? 'AI 분석 중... (10~30초 소요)'
+              : cropStep < 2
+              ? '정면 신체 영역을 먼저 지정해주세요'
+              : sideNotReady
+              ? '측면 신체 영역을 지정해주세요'
+              : sideImage ? '🚀 측정 시작 (정면 + 측면)' : '🚀 측정 시작';
+            return (
+              <button onClick={handleAnalyze} disabled={btnDisabled} style={{
+                width: '100%', padding: '13px',
+                background: btnDisabled ? '#b0bec5' : 'linear-gradient(135deg, #6e8efb, #a777e3)',
+                color: 'white', border: 'none', borderRadius: '12px',
+                fontSize: '1rem', fontWeight: 600,
+                cursor: btnDisabled ? 'not-allowed' : 'pointer', transition: 'opacity 0.2s',
+              }}>{btnText}</button>
+            );
+          })()}
         </div>
 
         {result && (
@@ -544,15 +730,19 @@ function BodyMeasure() {
             {(() => {
               const CLOTHING_MAP = {
                 top_length: { category: 'top', field: 'length (총장)', color: '#00FF00' },
-                shoulder: { category: 'top', field: 'shoulder', color: '#FFA500' },
-                chest:    { category: 'top', field: 'chest', color: '#C800C8' },
-                sleeve:   { category: 'top', field: 'sleeve', color: '#00BFFF' },
-                arm_width: { category: 'top', field: 'arm_width (이두)', color: '#FF4500' },
+                shoulder:   { category: 'top', field: 'shoulder', color: '#FFA500' },
+                chest:      { category: 'top', field: 'chest (폭)', color: '#C800C8' },
+                chest_circumference: { category: 'top', field: 'chest (둘레)', color: '#E040FB' },
+                waist:      { category: 'top', field: 'waist (폭)', color: '#FF8C00' },
+                waist_circumference: { category: 'top', field: 'waist (둘레)', color: '#FFB300' },
+                sleeve:     { category: 'top', field: 'sleeve', color: '#00BFFF' },
+                arm_width:  { category: 'top', field: 'arm_width (이두)', color: '#FF4500' },
                 bottom_length: { category: 'bottom', field: 'length (총장)', color: '#FFFF00' },
-                waist:    { category: 'bottom', field: 'waist', color: '#FF0000' },
-                thigh:    { category: 'bottom', field: 'thigh', color: '#00FFFF' },
-                rise:     { category: 'bottom', field: 'rise', color: '#FF69B4' },
-                hem:      { category: 'bottom', field: 'hem', color: '#32CD32' },
+                hip:        { category: 'bottom', field: 'waist (폭)', color: '#FF0000' },
+                hip_circumference: { category: 'bottom', field: 'waist (둘레)', color: '#FF5722' },
+                thigh:      { category: 'bottom', field: 'thigh', color: '#00FFFF' },
+                rise:       { category: 'bottom', field: 'rise', color: '#FF69B4' },
+                hem:        { category: 'bottom', field: 'hem', color: '#32CD32' },
               };
               const topItems = result.measurements.filter(m => CLOTHING_MAP[m.key]?.category === 'top');
               const bottomItems = result.measurements.filter(m => CLOTHING_MAP[m.key]?.category === 'bottom');
@@ -613,54 +803,44 @@ function BodyMeasure() {
               <p style={{ margin: '0 0 10px', fontWeight: 600, color: '#444', fontSize: '0.95rem' }}>분석 이미지</p>
 
               {/* 탭 버튼 */}
-              <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
-                {TAB_LABELS.map(t => (
-                  <button
-                    key={t.key}
-                    onClick={() => setActiveTab(t.key)}
-                    style={{
-                      flex: 1, padding: '8px 0', fontSize: '0.82rem', fontWeight: 600,
-                      borderRadius: '10px', border: 'none', cursor: 'pointer',
-                      background: activeTab === t.key
-                        ? 'linear-gradient(135deg, #6e8efb, #a777e3)'
-                        : '#f0f0f5',
-                      color: activeTab === t.key ? 'white' : '#666',
-                      transition: 'all 0.2s',
-                    }}
-                  >
-                    {t.label}
-                  </button>
-                ))}
-              </div>
+              {(() => {
+                const tabs = result.side_debug_image_base64
+                  ? [...TAB_LABELS, { key: 'side_debug', label: '📐 측면 분석' }]
+                  : TAB_LABELS;
+                return (
+                  <div style={{ display: 'flex', gap: '6px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                    {tabs.map(t => (
+                      <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
+                        flex: 1, minWidth: '80px', padding: '8px 0', fontSize: '0.82rem', fontWeight: 600,
+                        borderRadius: '10px', border: 'none', cursor: 'pointer',
+                        background: activeTab === t.key ? 'linear-gradient(135deg, #6e8efb, #a777e3)' : '#f0f0f5',
+                        color: activeTab === t.key ? 'white' : '#666', transition: 'all 0.2s',
+                      }}>{t.label}</button>
+                    ))}
+                  </div>
+                );
+              })()}
 
               {/* 탭 이미지 */}
               {activeTab === 'debug' && (
-                <img
-                  src={`data:image/jpeg;base64,${result.debug_image_base64}`}
-                  alt="측정 분석"
-                  style={{ width: '100%', borderRadius: '12px', objectFit: 'contain' }}
-                />
+                <img src={`data:image/jpeg;base64,${result.debug_image_base64}`} alt="측정 분석"
+                  style={{ width: '100%', borderRadius: '12px', objectFit: 'contain' }} />
               )}
               {activeTab === 'gray_debug' && (
-                <img
-                  src={`data:image/jpeg;base64,${result.gray_debug_image_base64}`}
-                  alt="실루엣+측정"
-                  style={{ width: '100%', borderRadius: '12px', objectFit: 'contain' }}
-                />
+                <img src={`data:image/jpeg;base64,${result.gray_debug_image_base64}`} alt="실루엣+측정"
+                  style={{ width: '100%', borderRadius: '12px', objectFit: 'contain' }} />
               )}
               {activeTab === 'extracted' && (
-                <img
-                  src={`data:image/jpeg;base64,${result.person_extracted_base64}`}
-                  alt="누끼"
-                  style={{ width: '100%', borderRadius: '12px', objectFit: 'contain', background: '#f5f5f5' }}
-                />
+                <img src={`data:image/jpeg;base64,${result.person_extracted_base64}`} alt="누끼"
+                  style={{ width: '100%', borderRadius: '12px', objectFit: 'contain', background: '#f5f5f5' }} />
               )}
               {activeTab === 'gray' && (
-                <img
-                  src={`data:image/jpeg;base64,${result.gray_mask_base64}`}
-                  alt="그레이 실루엣"
-                  style={{ width: '100%', borderRadius: '12px', objectFit: 'contain' }}
-                />
+                <img src={`data:image/jpeg;base64,${result.gray_mask_base64}`} alt="그레이 실루엣"
+                  style={{ width: '100%', borderRadius: '12px', objectFit: 'contain' }} />
+              )}
+              {activeTab === 'side_debug' && result.side_debug_image_base64 && (
+                <img src={`data:image/jpeg;base64,${result.side_debug_image_base64}`} alt="측면 분석"
+                  style={{ width: '100%', borderRadius: '12px', objectFit: 'contain' }} />
               )}
             </div>
 

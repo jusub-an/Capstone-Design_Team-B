@@ -8,7 +8,7 @@ import mediapipe as mp
 import numpy as np
 from mediapipe.tasks import python as mp_tasks
 from mediapipe.tasks.python import vision as mp_vision
-from PIL import Image as PILImage
+from PIL import Image as PILImage, ImageDraw, ImageFont
 from rembg import new_session, remove as rembg_remove
 
 _POSE_MODEL_PATH = os.path.join(os.path.dirname(__file__), "pose_landmarker_heavy.task")
@@ -59,7 +59,7 @@ class BodyMeasureEngine:
     # 공개 메서드
     # =========================================================
 
-    def analyze(self, image_bgr: np.ndarray, user_height_cm: float) -> Dict[str, Any]:
+    def analyze(self, image_bgr: np.ndarray, user_height_cm: float, side_image_bgr: Optional[np.ndarray] = None) -> Dict[str, Any]:
         if image_bgr is None or image_bgr.size == 0:
             raise ValueError("유효한 이미지가 아닙니다.")
         if user_height_cm <= 0:
@@ -177,14 +177,23 @@ class BodyMeasureEngine:
         crotch = self._find_crotch_scan(mask, spine_x, hip_y, knee_y)
 
         # ══════════════════════════════════════
-        # 5. 허리너비 (→ 하의 waist)
-        #    바지 허리선이 위치하는 실제 신체 부위(골반 약간 위쪽)를 측정
-        #    (hip_y에서 위로 약 15% 지점)
+        # 5. 골반너비 (→ 하의 waist) — 바지 허리선 기준
+        #    hip_y에서 위로 약 15% 지점 (골반 약간 위쪽)
         # ══════════════════════════════════════
         pants_waist_y = int(hip_y - (hip_y - shoulder_y) * 0.15)
-        waist_span = self._find_torso_width_at_y(mask, spine_x, pants_waist_y, band=5)
+        hip_span = self._find_torso_width_at_y(mask, spine_x, pants_waist_y, band=5)
+        if hip_span is None:
+            hip_span = {"width_px": 10, "p_start": {"x": float(spine_x - 5), "y": float(pants_waist_y)}, "p_end": {"x": float(spine_x + 5), "y": float(pants_waist_y)}}
+
+        # ══════════════════════════════════════
+        # 5b. 허리너비 (→ 상의 waist) — 겨드랑이~골반 사이 55% 지점
+        #     상의(셔츠/재킷) 허리 핏 기준
+        # ══════════════════════════════════════
+        _waist_y = int(armpit_y + (pants_waist_y - armpit_y) * 0.55) if armpit_y is not None \
+            else int(shoulder_y + (pants_waist_y - shoulder_y) * 0.6)
+        waist_span = self._find_torso_width_at_y(mask, spine_x, _waist_y, band=5)
         if waist_span is None:
-            waist_span = {"width_px": 10, "p_start": {"x": float(spine_x - 5), "y": float(pants_waist_y)}, "p_end": {"x": float(spine_x + 5), "y": float(pants_waist_y)}}
+            waist_span = {"width_px": 10, "p_start": {"x": float(spine_x - 5), "y": float(_waist_y)}, "p_end": {"x": float(spine_x + 5), "y": float(_waist_y)}}
 
         # ══════════════════════════════════════
         # 7. 허벅지너비 (→ 하의 thigh)
@@ -299,11 +308,16 @@ class BodyMeasureEngine:
             self._item("top_length", "상체길이", top_length_px, cm_per_pixel,
                        top_length_p_start, top_length_p_end))
 
-        # ── 하의 대응 항목 ──
+        # ── 상의 허리 / 하의 골반 ──
         if waist_span is not None:
             measurements.append(self._item(
                 "waist", "허리너비", waist_span["width_px"], cm_per_pixel,
                 waist_span["p_start"], waist_span["p_end"],
+            ))
+        if hip_span is not None:
+            measurements.append(self._item(
+                "hip", "골반너비", hip_span["width_px"], cm_per_pixel,
+                hip_span["p_start"], hip_span["p_end"],
             ))
 
 
@@ -330,6 +344,58 @@ class BodyMeasureEngine:
             self._item("bottom_length", "하반신길이", bottom_length_px, cm_per_pixel,
                        bottom_length_p_start, bottom_length_p_end))
 
+        # ══════════════════════════════════════
+        # 13. 측면 사진 기반 둘레 측정 (선택)
+        #     가슴둘레 = 2π√((a²+b²)/2), a=가슴폭/2, b=측면깊이/2
+        # ══════════════════════════════════════
+        side_debug_image = None
+        if side_image_bgr is not None:
+            try:
+                # 정면과 측면 모두 mask_bottom 기준으로 비율을 통일
+                # cm 변환 후 역변환 시 heel 랜드마크 vs mask_bottom 참조점 불일치가 발생하므로
+                # 비율(ratio)로 직접 매핑하면 신발 보정 없이 일관성 유지됨
+                _front_total = total_pixel_height if total_pixel_height > 0 else pixel_height
+                # 가슴선을 겨드랑이 위치보다 살짝 위로 조정 (0.90 계수 = 약 3~4% 상향)
+                chest_ratio = (armpit_y - top_y) / _front_total * 0.90 if armpit_y is not None else 0.26
+                waist_ratio = (_waist_y - top_y) / _front_total   # 상의 허리
+                hip_ratio   = (pants_waist_y - top_y) / _front_total  # 골반
+                side_depths = self._extract_depth_measurements(
+                    side_image_bgr, chest_ratio, waist_ratio, hip_ratio, user_height_cm)
+                if side_depths:
+                    side_debug_image = side_depths.get("debug_image")
+                    chest_d = side_depths.get("chest_depth_cm")
+                    waist_d = side_depths.get("waist_depth_cm")
+                    hip_d   = side_depths.get("hip_depth_cm")
+                    chest_w = (chest_width_px * cm_per_pixel) if chest_width_px is not None else None
+                    waist_w = (waist_span["width_px"] * cm_per_pixel) if waist_span is not None else None
+                    hip_w   = (hip_span["width_px"]   * cm_per_pixel) if hip_span   is not None else None
+                    if chest_d is not None and chest_w is not None:
+                        a, b = chest_w / 2, chest_d / 2
+                        chest_circ = 2 * math.pi * math.sqrt((a ** 2 + b ** 2) / 2)
+                        measurements.append({
+                            "key": "chest_circumference", "label": "가슴둘레",
+                            "value_cm": round(chest_circ, 1),
+                            "width_px": None, "p_start": None, "p_end": None,
+                        })
+                    if waist_d is not None and waist_w is not None:
+                        a, b = waist_w / 2, waist_d / 2
+                        waist_circ = 2 * math.pi * math.sqrt((a ** 2 + b ** 2) / 2)
+                        measurements.append({
+                            "key": "waist_circumference", "label": "허리둘레",
+                            "value_cm": round(waist_circ, 1),
+                            "width_px": None, "p_start": None, "p_end": None,
+                        })
+                    if hip_d is not None and hip_w is not None:
+                        a, b = hip_w / 2, hip_d / 2
+                        hip_circ = 2 * math.pi * math.sqrt((a ** 2 + b ** 2) / 2)
+                        measurements.append({
+                            "key": "hip_circumference", "label": "골반둘레",
+                            "value_cm": round(hip_circ, 1),
+                            "width_px": None, "p_start": None, "p_end": None,
+                        })
+            except Exception as _side_err:
+                warnings.append(f"측면 사진 분석 실패: {str(_side_err)[:60]}")
+
         debug_image = self._draw_debug(image_bgr, landmarks, top_y, bottom_y,
                                        armpits, crotch, measurements)
         person_extracted, gray_mask = self._build_visual_images(image_bgr, seg_float, raw_mask)
@@ -354,6 +420,7 @@ class BodyMeasureEngine:
             "person_extracted":  person_extracted,
             "gray_mask":         gray_mask,
             "gray_debug_image":  gray_debug_image,
+            "side_debug_image":  side_debug_image,
         }
 
     # =========================================================
@@ -974,18 +1041,145 @@ class BodyMeasureEngine:
             return results[0]
         return None
 
+    def _extract_depth_measurements(
+        self,
+        side_bgr: np.ndarray,
+        chest_ratio: float,
+        waist_ratio: float,
+        hip_ratio: float,
+        user_height_cm: float,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        측면 사진에서 가슴/허리/골반 깊이(cm)를 측정한다.
+        각 ratio: 정면 mask_bottom 기준 (머리~발끝) 내 위치 비율.
+        측면도 동일 기준으로 매핑 → 참조점 불일치 없음.
+        """
+        h, w = side_bgr.shape[:2]
+        side_rgb = cv2.cvtColor(side_bgr, cv2.COLOR_BGR2RGB)
+
+        _REMBG_MAX = 1024
+        scale = min(1.0, _REMBG_MAX / max(h, w))
+        rw, rh = int(w * scale), int(h * scale)
+        pil_input = PILImage.fromarray(side_rgb).resize((rw, rh), PILImage.LANCZOS)
+        rembg_rgba = rembg_remove(pil_input, session=self._rembg_session, only_mask=False)
+        alpha_small = np.array(rembg_rgba)[:, :, 3].astype(np.float32)
+        alpha_arr = cv2.resize(alpha_small, (w, h), interpolation=cv2.INTER_LINEAR) if scale < 1.0 else alpha_small
+
+        raw_mask = (alpha_arr > 128).astype(np.uint8) * 255
+        mask = self._build_binary_mask(raw_mask, w)
+
+        top_y = next((y for y in range(h) if np.any(mask[y, :] > 0)), None)
+        bottom_y = next((y for y in range(h - 1, -1, -1) if np.any(mask[y, :] > 0)), None)
+        if top_y is None or bottom_y is None or bottom_y <= top_y:
+            return None
+
+        pixel_height = float(bottom_y - top_y)
+        # 깊이(cm) 계산용 스케일 — mask_bottom 기준이므로 신발 보정 불필요
+        cm_per_pixel = user_height_cm / pixel_height
+
+        # 비율로 측면 Y 위치 결정: 정면 mask_bottom 기준 ratio → 측면 mask_bottom 기준 ty
+        chest_ty = int(top_y + chest_ratio * pixel_height)
+        waist_ty  = int(top_y + waist_ratio  * pixel_height)
+        hip_ty    = int(top_y + hip_ratio    * pixel_height)
+
+        seg_float = alpha_arr / 255.0
+        _, dbg = self._build_visual_images(side_bgr, seg_float, raw_mask)
+
+        cv2.line(dbg, (30, top_y), (30, bottom_y), (0, 0, 200), 2)
+        cv2.circle(dbg, (30, top_y),    4, (0, 0, 200), -1)
+        cv2.circle(dbg, (30, bottom_y), 4, (0, 0, 200), -1)
+
+        text_tasks: List[tuple] = []
+
+        def _draw_depth_line(ty: int, color_bgr: tuple, label_prefix: str) -> Optional[float]:
+            ty = max(0, min(h - 1, ty))
+            xs = np.where(mask[ty, :] > 0)[0]
+            if len(xs) == 0:
+                return None
+            cx = int((int(xs[0]) + int(xs[-1])) / 2)
+            span = self._get_horizontal_width(mask, cx, ty)
+            if span is None:
+                return None
+            depth_cm = span["width_px"] * cm_per_pixel
+            x1, x2 = int(span["p_start"]["x"]), int(span["p_end"]["x"])
+            cv2.line(dbg, (x1, ty), (x2, ty), color_bgr, 3)
+            cv2.circle(dbg, (x1, ty), 6, color_bgr, -1)
+            cv2.circle(dbg, (x2, ty), 6, color_bgr, -1)
+            text_tasks.append((f'{label_prefix}: {depth_cm:.1f}cm', int((x1 + x2) / 2), ty - 8, color_bgr))
+            return depth_cm
+
+        chest_d = _draw_depth_line(chest_ty, (200,   0, 200), "가슴깊이")
+        waist_d  = _draw_depth_line(waist_ty,  (0,  140, 255), "허리깊이")
+        hip_d    = _draw_depth_line(hip_ty,    (0,   0, 220), "골반깊이")
+        dbg = self._pil_draw_texts(dbg, text_tasks)
+
+        return {
+            "chest_depth_cm": chest_d,
+            "waist_depth_cm": waist_d,
+            "hip_depth_cm":   hip_d,
+            "debug_image":    dbg,
+        }
+
+    def _get_korean_font(self, size: int = 15) -> ImageFont.FreeTypeFont:
+        """PIL용 한글 지원 폰트를 반환한다. 없으면 기본 폰트 사용."""
+        font_paths = [
+            "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+            "/Library/Fonts/AppleGothic.ttf",
+            "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
+            "/usr/share/fonts/opentype/noto/NotoSansCJKkr-Regular.otf",
+        ]
+        for fp in font_paths:
+            if os.path.exists(fp):
+                try:
+                    return ImageFont.truetype(fp, size)
+                except Exception:
+                    pass
+        return ImageFont.load_default()
+
+    def _pil_draw_texts(self, img_bgr: np.ndarray,
+                        text_tasks: List[tuple]) -> np.ndarray:
+        """
+        text_tasks: list of (text, center_x, center_y, color_bgr)
+        BGR numpy array → PIL로 한글 텍스트 + 검정 배경 렌더링 → BGR 반환.
+        """
+        img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+        pil_img = PILImage.fromarray(img_rgb)
+        draw = ImageDraw.Draw(pil_img)
+        font = self._get_korean_font(15)
+        w_img = img_bgr.shape[1]
+
+        for text, cx, cy, color_bgr in text_tasks:
+            c_rgb = (color_bgr[2], color_bgr[1], color_bgr[0])
+            try:
+                bb = draw.textbbox((0, 0), text, font=font)
+                tw, th = bb[2] - bb[0], bb[3] - bb[1]
+                tx = max(2, min(w_img - tw - 4, cx - tw // 2))
+                ty = cy - th - 4
+                if ty < 0:
+                    ty = cy + 4
+                pad = 3
+                draw.rectangle([tx - pad, ty - pad, tx + tw + pad, ty + th + pad], fill=(0, 0, 0))
+                draw.text((tx, ty), text, font=font, fill=c_rgb)
+            except Exception:
+                pass
+
+        return cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+
     def _draw_debug(self, image_bgr: np.ndarray, landmarks,
                     top_y: int, bottom_y: int,
                     armpits: Dict, crotch: Optional[Dict],
                     measurements: List[Dict]) -> np.ndarray:
         dbg = image_bgr.copy()
+        text_tasks: List[tuple] = []
 
         # 키 기준선
         cv2.line(dbg, (40, top_y), (40, bottom_y), (0, 0, 255), 2)
         cv2.circle(dbg, (40, top_y),    4, (0, 0, 255), -1)
         cv2.circle(dbg, (40, bottom_y), 4, (0, 0, 255), -1)
 
-        # 주요 랜드마크 (발목 27,28 추가)
+        # 주요 랜드마크
         for idx in [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28, 29, 30]:
             cv2.circle(dbg,
                        (int(landmarks[idx]["x"]), int(landmarks[idx]["y"])),
@@ -996,67 +1190,40 @@ class BodyMeasureEngine:
             pt = armpits.get(name)
             if pt:
                 cv2.circle(dbg, (int(pt["x"]), int(pt["y"])), 6, (255, 0, 255), -1)
-                cv2.putText(dbg, name, (int(pt["x"]) + 5, int(pt["y"]) - 5),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 0, 255), 1, cv2.LINE_AA)
+                text_tasks.append((name, int(pt["x"]) + 5, int(pt["y"]) - 5, (255, 0, 255)))
 
         # 사타구니 앵커
         if crotch:
             cv2.circle(dbg, (int(crotch["x"]), int(crotch["y"])), 6, (0, 255, 255), -1)
-            cv2.putText(dbg, "crotch",
-                        (int(crotch["x"]) + 5, int(crotch["y"]) - 5),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1, cv2.LINE_AA)
+            text_tasks.append(("crotch", int(crotch["x"]) + 5, int(crotch["y"]) - 5, (0, 255, 255)))
 
-        # 측정 선 및 텍스트 (항목별 고유 색상 적용)
         color_map = {
-            "shoulder":      (0, 165, 255),    # 오렌지
-            "chest":         (200, 0, 200),    # 보라
-            "sleeve":        (255, 191, 0),    # 파랑 (Deep Sky Blue)
-            "arm_width":     (0, 69, 255),     # 주황/빨강 계열
-            "top_length":    (0, 255, 0),      # 초록
-            "waist":         (0, 0, 255),      # 빨강
-            "hip":           (0, 165, 255),    # 주황 (미사용)
-            "thigh":         (255, 255, 0),    # 시안 (Cyan)
-            "rise":          (180, 105, 255),  # 핫핑크 (Hot Pink)
-            "hem":           (50, 205, 50),    # 라임 (Lime)
-            "bottom_length": (0, 255, 255),    # 노랑
+            "shoulder":      (0, 165, 255),
+            "chest":         (200, 0, 200),
+            "sleeve":        (255, 191, 0),
+            "arm_width":     (0, 69, 255),
+            "top_length":    (0, 255, 0),
+            "waist":         (0, 0, 255),
+            "hip":           (0, 165, 255),
+            "thigh":         (255, 255, 0),
+            "rise":          (180, 105, 255),
+            "hem":           (50, 205, 50),
+            "bottom_length": (0, 255, 255),
         }
 
         for item in measurements:
             ps, pe = item.get("p_start"), item.get("p_end")
             if ps is None or pe is None:
                 continue
-            
             x1, y1 = int(ps["x"]), int(ps["y"])
             x2, y2 = int(pe["x"]), int(pe["y"])
-            
-            # 항목별 색상 가져오기 (없으면 기본 주황색)
             c = color_map.get(item["key"], (0, 200, 255))
-            
-            # 선과 끝점 그리기
             cv2.line(dbg, (x1, y1), (x2, y2), c, 2)
             cv2.circle(dbg, (x1, y1), 4, c, -1)
             cv2.circle(dbg, (x2, y2), 4, c, -1)
-            
-            # 텍스트 그리기 (가독성을 위해 반투명/어두운 배경 추가)
             text = f'{item["label"]}: {item["value_cm"]}cm'
-            font = cv2.FONT_HERSHEY_SIMPLEX
-            font_scale = 0.45
-            thickness = 1
-            
-            # 텍스트 크기 계산
-            (text_w, text_h), _ = cv2.getTextSize(text, font, font_scale, thickness)
-            
-            # 텍스트 위치 (선 중앙에서 약간 위로)
-            tx = int((x1 + x2) / 2) - int(text_w / 2)
-            ty = int((y1 + y2) / 2) - 8
-            
-            # 배경 박스 그리기
-            pad = 3
-            cv2.rectangle(dbg, (tx - pad, ty - text_h - pad), 
-                          (tx + text_w + pad, ty + pad), 
-                          (0, 0, 0), -1)
-            
-            # 텍스트 그리기 (글씨는 색상 적용)
-            cv2.putText(dbg, text, (tx, ty), font, font_scale, c, thickness, cv2.LINE_AA)
+            cx = int((x1 + x2) / 2)
+            cy = int((y1 + y2) / 2) - 8
+            text_tasks.append((text, cx, cy, c))
 
-        return dbg
+        return self._pil_draw_texts(dbg, text_tasks)

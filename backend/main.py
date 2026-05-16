@@ -199,6 +199,7 @@ def get_measure_engine():
 async def measure_body(
     image: UploadFile = File(...),
     height_cm: float = Form(...),
+    side_image: Optional[UploadFile] = File(None),
 ):
     contents = await image.read()
     nparr = np.frombuffer(contents, np.uint8)
@@ -207,10 +208,16 @@ async def measure_body(
     if image_bgr is None:
         raise HTTPException(status_code=400, detail="이미지를 읽을 수 없습니다.")
 
+    side_bgr = None
+    if side_image and side_image.filename:
+        side_contents = await side_image.read()
+        side_nparr = np.frombuffer(side_contents, np.uint8)
+        side_bgr = cv2.imdecode(side_nparr, cv2.IMREAD_COLOR)
+
     try:
         engine = get_measure_engine()
         # rembg(u2net) CPU 추론이 동기 블로킹이므로 스레드풀에서 실행
-        result = await run_in_threadpool(engine.analyze, image_bgr, height_cm)
+        result = await run_in_threadpool(engine.analyze, image_bgr, height_cm, side_bgr)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
@@ -230,6 +237,7 @@ async def measure_body(
         "person_extracted_base64": _encode(result["person_extracted"]),
         "gray_mask_base64":        _encode(result["gray_mask"]),
         "gray_debug_image_base64": _encode(result["gray_debug_image"]),
+        "side_debug_image_base64": _encode(result["side_debug_image"]) if result.get("side_debug_image") is not None else None,
     }
 
 # --- 의류 치수 측정 엔드포인트 ---
