@@ -355,6 +355,7 @@ function BodyMeasure() {
       fd.append('measurements', JSON.stringify({
         items: result.measurements,
         height_ratio: result.height_ratio ?? 1,
+        anchors: result.anchors,
       }));
       fd.append('gray_mask', base64ToBlob(result.gray_mask_base64), 'gray_mask.jpg');
       fd.append('person_extracted', base64ToBlob(result.person_extracted_base64), 'person_extracted.jpg');
@@ -732,17 +733,20 @@ function BodyMeasure() {
                 top_length: { category: 'top', field: 'length (총장)', color: '#00FF00' },
                 shoulder:   { category: 'top', field: 'shoulder', color: '#FFA500' },
                 chest:      { category: 'top', field: 'chest (폭)', color: '#C800C8' },
-                chest_circumference: { category: 'top', field: 'chest (둘레)', color: '#E040FB' },
-                waist:      { category: 'top', field: 'waist (폭)', color: '#FF8C00' },
-                waist_circumference: { category: 'top', field: 'waist (둘레)', color: '#FFB300' },
-                sleeve:     { category: 'top', field: 'sleeve', color: '#00BFFF' },
-                arm_width:  { category: 'top', field: 'arm_width (이두)', color: '#FF4500' },
-                bottom_length: { category: 'bottom', field: 'length (총장)', color: '#FFFF00' },
-                hip:        { category: 'bottom', field: 'waist (폭)', color: '#FF0000' },
-                hip_circumference: { category: 'bottom', field: 'waist (둘레)', color: '#FF5722' },
-                thigh:      { category: 'bottom', field: 'thigh', color: '#00FFFF' },
+                chest_circumference: { category: 'top', field: '가슴둘레', color: '#E040FB' },
+                waist:      { category: 'top', field: '허리단면', color: '#FF8C00' },
+                waist_circumference: { category: 'top', field: '허리둘레', color: '#FFB300' },
+                sleeve:     { category: 'top', field: '소매길이', color: '#00BFFF' },
+                arm_width:  { category: 'top', field: '팔너비', color: '#FF4500' },
+                arm_angle:  { category: 'top', field: '팔 벌림 각도', color: '#B39DDB' },
+                bottom_length: { category: 'bottom', field: '총장', color: '#FFFF00' },
+                hip:        { category: 'bottom', field: '골반너비', color: '#FF0000' },
+                hip_circumference: { category: 'bottom', field: '엉덩이둘레', color: '#FF5722' },
+                thigh:      { category: 'bottom', field: '허벅지너비', color: '#00FFFF' },
+                thigh_circumference: { category: 'bottom', field: '허벅지둘레', color: '#00ACC1' },
                 rise:       { category: 'bottom', field: 'rise', color: '#FF69B4' },
                 hem:        { category: 'bottom', field: 'hem', color: '#32CD32' },
+                leg_angle:  { category: 'bottom', field: '다리 벌림 각도', color: '#9FA8DA' },
               };
               const topItems = result.measurements.filter(m => CLOTHING_MAP[m.key]?.category === 'top');
               const bottomItems = result.measurements.filter(m => CLOTHING_MAP[m.key]?.category === 'bottom');
@@ -782,7 +786,9 @@ function BodyMeasure() {
                                 {CLOTHING_MAP[m.key]?.field}
                               </span>
                             </td>
-                            <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, color: '#333' }}>{m.value_cm} cm</td>
+                            <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, color: '#333' }}>
+                              {m.key.includes('angle') ? `${m.value_cm}°` : `${m.value_cm} cm`}
+                            </td>
                           </tr>
                         ))}
                       </tbody>

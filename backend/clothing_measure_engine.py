@@ -6,8 +6,9 @@ import base64
 
 class ClothingMeasureEngine:
     def __init__(self):
-        # rembg 모델은 첫 호출 시 자동 다운로드 (u2net)
-        pass
+        # rembg 모델은 첫 호출 시 자동 다운로드 (birefnet-massive)
+        from rembg import new_session
+        self.session = new_session("birefnet-massive")
 
     def _encode_img(self, img):
         """OpenCV 이미지를 base64 문자열로 변환"""
@@ -25,6 +26,69 @@ class ClothingMeasureEngine:
         proj_x = a[0] + u * (b[0] - a[0])
         proj_y = a[1] + u * (b[1] - a[1])
         return math.hypot(p[0] - proj_x, p[1] - proj_y)
+
+    def _get_sharp_corners(self, cnt):
+        # 1. 대략적인 4각형 꼭짓점 찾기
+        peri = cv2.arcLength(cnt, True)
+        approx = None
+        for eps in [0.02, 0.03, 0.04, 0.05, 0.06]:
+            app = cv2.approxPolyDP(cnt, eps * peri, True)
+            if len(app) == 4:
+                approx = app
+                break
+        
+        if approx is None:
+            return None
+            
+        cnt_pts = cnt.reshape(-1, 2)
+        approx_pts = approx.reshape(-1, 2)
+        
+        # 꼭짓점과 가장 가까운 윤곽선 인덱스 찾기
+        indices = []
+        for pt in approx_pts:
+            dists = np.sum((cnt_pts - pt)**2, axis=1)
+            indices.append(np.argmin(dists))
+            
+        indices.sort()
+        
+        lines = []
+        n = len(cnt_pts)
+        for i in range(4):
+            start_idx = indices[i]
+            end_idx = indices[(i+1)%4]
+            
+            if start_idx < end_idx:
+                segment = cnt_pts[start_idx:end_idx]
+            else:
+                segment = np.vstack((cnt_pts[start_idx:], cnt_pts[:end_idx]))
+                
+            # 라운딩된 꼭짓점 부근(양끝 15%) 제외하고 직선 구간만 추출
+            seg_len = len(segment)
+            if seg_len > 10:
+                trim = int(seg_len * 0.15)
+                segment = segment[trim:-trim]
+                
+            if len(segment) > 2:
+                line = cv2.fitLine(segment, cv2.DIST_L2, 0, 0.01, 0.01)
+                lines.append((line[0][0], line[1][0], line[2][0], line[3][0]))
+            else:
+                return approx
+                
+        def intersect(line1, line2):
+            v1x, v1y, x1, y1 = line1
+            v2x, v2y, x2, y2 = line2
+            denom = v1x * v2y - v1y * v2x
+            if abs(denom) < 1e-6: return None
+            t1 = ((x2 - x1) * v2y - (y2 - y1) * v2x) / denom
+            return [x1 + t1 * v1x, y1 + t1 * v1y]
+
+        sharp_corners = []
+        for i in range(4):
+            pt = intersect(lines[i-1], lines[i])
+            if pt is None: return approx
+            sharp_corners.append([pt])
+            
+        return np.array(sharp_corners, dtype=np.float32)
 
     def process(self, shirt_image_bytes, a4_image_bytes, shirt_rect, a4_rect, orig_w, orig_h, category_type="Top", shoulder_pts=None):
         # 난수 고정 — AI 배경제거 결과를 매번 동일하게
@@ -49,8 +113,8 @@ class ClothingMeasureEngine:
             debug_stages['1_a4_crop_original'] = self._encode_img(a4_orig_img)
 
         # 1. 배경 제거 (rembg)
-        shirt_mask_bytes = remove(shirt_image_bytes)
-        a4_mask_bytes = remove(a4_image_bytes)
+        shirt_mask_bytes = remove(shirt_image_bytes, session=self.session)
+        a4_mask_bytes = remove(a4_image_bytes, session=self.session)
 
         # 바이트를 numpy array(이미지)로 변환
         shirt_nparr = np.frombuffer(shirt_mask_bytes, np.uint8)
@@ -69,9 +133,9 @@ class ClothingMeasureEngine:
         debug_stages['2_shirt_rembg_rgba'] = self._encode_img(self._rgba_to_vis(shirt_rgba))
         debug_stages['3_a4_rembg_rgba'] = self._encode_img(self._rgba_to_vis(a4_rgba))
 
-        # 2. A4 분석
+        # 2. A4 분석 (Threshold를 127로 올려 더 날카로운 경계 획득)
         a4_alpha = a4_rgba[:, :, 3]
-        _, a4_alpha_thresh = cv2.threshold(a4_alpha, 10, 255, cv2.THRESH_BINARY)
+        _, a4_alpha_thresh = cv2.threshold(a4_alpha, 127, 255, cv2.THRESH_BINARY)
 
         # 디버그: A4 알파 마스크
         debug_stages['4_a4_alpha_mask'] = self._encode_img(a4_alpha_thresh)
@@ -85,17 +149,17 @@ class ClothingMeasureEngine:
         if cv2.contourArea(cnt_a4) < 1000:
             raise ValueError("A4_TOO_SMALL")
 
-        peri = cv2.arcLength(cnt_a4, True)
-        approx = cv2.approxPolyDP(cnt_a4, 0.04 * peri, True)
+        # 기하학적 선분 교차를 이용해 완벽하게 날카로운 꼭짓점 추출
+        approx = self._get_sharp_corners(cnt_a4)
 
-        if len(approx) != 4:
+        if approx is None or len(approx) != 4:
             raise ValueError("A4_NOT_QUAD")
 
         # 디버그: A4 꼭짓점 시각화
         a4_corners_vis = cv2.cvtColor(a4_alpha_thresh, cv2.COLOR_GRAY2BGR)
         cv2.drawContours(a4_corners_vis, [cnt_a4], -1, (0, 255, 0), 2)
         for pt in approx:
-            cv2.circle(a4_corners_vis, tuple(pt[0]), 8, (0, 0, 255), -1)
+            cv2.circle(a4_corners_vis, (int(pt[0][0]), int(pt[0][1])), 8, (0, 0, 255), -1)
         debug_stages['5_a4_quad_detection'] = self._encode_img(a4_corners_vis)
 
         # 글로벌 좌표계로 변환 (orig_w, orig_h 기준)
@@ -139,7 +203,7 @@ class ClothingMeasureEngine:
         new_width = round(max_x + dx)
         new_height = round(max_y + dy)
 
-        if new_width > 4000 or new_height > 4000:
+        if new_width > max(4000, orig_w * 3) or new_height > max(4000, orig_h * 3):
             raise ValueError("WARP_TOO_LARGE")
 
         T = np.array([[1, 0, dx], [0, 1, dy], [0, 0, 1]], dtype=np.float64)
@@ -153,7 +217,7 @@ class ClothingMeasureEngine:
         # 3. 의류 마스크 병합
         full_shirt_mask = np.zeros((int(orig_h), int(orig_w)), dtype=np.uint8)
         shirt_alpha = shirt_rgba[:, :, 3]
-        _, shirt_alpha_thresh = cv2.threshold(shirt_alpha, 10, 255, cv2.THRESH_BINARY)
+        _, shirt_alpha_thresh = cv2.threshold(shirt_alpha, 127, 255, cv2.THRESH_BINARY)
 
         # 디버그: 의류 알파 마스크
         debug_stages['6_shirt_alpha_mask'] = self._encode_img(shirt_alpha_thresh)
@@ -388,12 +452,19 @@ class ClothingMeasureEngine:
         debug_img = cv2.cvtColor(warped_shirt_mask, cv2.COLOR_GRAY2BGR)
         debug_img[warped_shirt_mask > 0] = [60, 60, 60] # 어두운 회색 배경
         
+        # 동적 스케일링 계산
+        img_w = warped_shirt_mask.shape[1]
+        base_scale = max(1.0, img_w / 1500.0)
+        font_scale = 0.7 * base_scale
+        thick = max(2, int(2 * base_scale))
+        radius = max(8, int(8 * base_scale))
+        
         # 1. 의류 윤곽선 (흰색)
-        cv2.drawContours(debug_img, [tshirt_cnt], -1, (255, 255, 255), 2)
+        cv2.drawContours(debug_img, [tshirt_cnt], -1, (255, 255, 255), thick)
 
         # 2. Convex Hull (노란색 점선 느낌으로 그리기)
         hull_pts = cv2.convexHull(tshirt_cnt)
-        cv2.drawContours(debug_img, [hull_pts], -1, (0, 255, 255), 2)
+        cv2.drawContours(debug_img, [hull_pts], -1, (0, 255, 255), thick)
 
         # 3. Convexity Defects (움푹 패인 곳 - 보라색 점)
         if defects is not None:
@@ -401,23 +472,23 @@ class ClothingMeasureEngine:
                 s, e, f, d = defects[i, 0]
                 fx, fy = tshirt_cnt[f][0]
                 if d / 256.0 > 10.0: # 깊이가 어느정도 있는 패인 곳만
-                    cv2.circle(debug_img, (fx, fy), 4, (255, 0, 255), -1)
+                    cv2.circle(debug_img, (fx, fy), max(4, int(4 * base_scale)), (255, 0, 255), -1)
 
         # 4. A4 용지 영역 (초록색) - 원본 좌표를 Warped 좌표로 변환하여 그리기
         warped_a4_pts = cv2.perspectiveTransform(src_tri.reshape(-1, 1, 2), M_new)
-        cv2.polylines(debug_img, [np.int32(warped_a4_pts)], True, (0, 255, 0), 2)
-        cv2.putText(debug_img, "A4 (Transformed)", tuple(np.int32(warped_a4_pts[0][0])), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        cv2.polylines(debug_img, [np.int32(warped_a4_pts)], True, (0, 255, 0), thick)
+        cv2.putText(debug_img, "A4 (Transformed)", tuple(np.int32(warped_a4_pts[0][0])), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 0), thick)
 
         def draw_point(pt, color, text):
-            cv2.circle(debug_img, (int(pt[0]), int(pt[1])), 8, color, -1)
-            cv2.putText(debug_img, text, (int(pt[0]) + 10, int(pt[1]) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+            cv2.circle(debug_img, (int(pt[0]), int(pt[1])), radius, color, -1)
+            cv2.putText(debug_img, text, (int(pt[0]) + radius + 5, int(pt[1]) - radius - 5), cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, thick)
             
         def draw_line(p1, p2, color, text):
             p1_int = (int(p1[0]), int(p1[1]))
             p2_int = (int(p2[0]), int(p2[1]))
-            cv2.line(debug_img, p1_int, p2_int, color, 3)
-            mid = ((p1_int[0] + p2_int[0]) // 2, (p1_int[1] + p2_int[1]) // 2 - 10)
-            cv2.putText(debug_img, text, mid, cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
+            cv2.line(debug_img, p1_int, p2_int, color, thick)
+            mid = ((p1_int[0] + p2_int[0]) // 2, (p1_int[1] + p2_int[1]) // 2 - int(10 * base_scale))
+            cv2.putText(debug_img, text, mid, cv2.FONT_HERSHEY_SIMPLEX, font_scale * 1.1, color, thick)
 
         # 특징점과 선 그리기 (최종 추출 결과)
         draw_point(chest_left, (255, 100, 100), "Armpit L")
@@ -656,44 +727,51 @@ class ClothingMeasureEngine:
         hem_cm = self.dist(hem_l_left, hem_l_right) / ppcm
         thigh_cm = self.dist(thigh_l_left, thigh_l_right) / ppcm
 
+        # 동적 스케일링 계산
+        img_w = warped_shirt_mask.shape[1]
+        base_scale = max(1.0, img_w / 1500.0)
+        font_scale = 0.7 * base_scale
+        thick = max(2, int(2 * base_scale))
+        radius = max(8, int(8 * base_scale))
+
         debug_img = cv2.cvtColor(warped_shirt_mask, cv2.COLOR_GRAY2BGR)
         debug_img[warped_shirt_mask > 0] = [60, 60, 60]
         
-        cv2.drawContours(debug_img, [tshirt_cnt], -1, (255, 255, 255), 2)
+        cv2.drawContours(debug_img, [tshirt_cnt], -1, (255, 255, 255), thick)
         
         if defects is not None:
             for i in range(defects.shape[0]):
                 s, e, f, d = defects[i, 0]
                 fx, fy = tshirt_cnt[f][0]
                 if d / 256.0 > 10.0:
-                    cv2.circle(debug_img, (fx, fy), 4, (255, 0, 255), -1)
+                    cv2.circle(debug_img, (fx, fy), max(4, int(4 * base_scale)), (255, 0, 255), -1)
                     
         warped_a4_pts = cv2.perspectiveTransform(src_tri.reshape(-1, 1, 2), M_new)
-        cv2.polylines(debug_img, [np.int32(warped_a4_pts)], True, (0, 255, 0), 2)
-        cv2.putText(debug_img, "A4 (Transformed)", tuple(np.int32(warped_a4_pts[0][0])), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        cv2.polylines(debug_img, [np.int32(warped_a4_pts)], True, (0, 255, 0), thick)
+        cv2.putText(debug_img, "A4 (Transformed)", tuple(np.int32(warped_a4_pts[0][0])), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 0), thick)
 
         def draw_point(pt, color, text):
-            cv2.circle(debug_img, (int(pt[0]), int(pt[1])), 8, color, -1)
-            cv2.putText(debug_img, text, (int(pt[0]) + 10, int(pt[1]) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+            cv2.circle(debug_img, (int(pt[0]), int(pt[1])), radius, color, -1)
+            cv2.putText(debug_img, text, (int(pt[0]) + radius + 5, int(pt[1]) - radius - 5), cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, thick)
             
         def draw_line(p1, p2, color, text):
             p1_int = (int(p1[0]), int(p1[1]))
             p2_int = (int(p2[0]), int(p2[1]))
-            cv2.line(debug_img, p1_int, p2_int, color, 3)
-            mid = ((p1_int[0] + p2_int[0]) // 2, (p1_int[1] + p2_int[1]) // 2 - 10)
-            cv2.putText(debug_img, text, mid, cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
+            cv2.line(debug_img, p1_int, p2_int, color, thick)
+            mid = ((p1_int[0] + p2_int[0]) // 2, (p1_int[1] + p2_int[1]) // 2 - int(10 * base_scale))
+            cv2.putText(debug_img, text, mid, cv2.FONT_HERSHEY_SIMPLEX, font_scale * 1.1, color, thick)
 
         # 📌 선 그리기
         # 1) 허리 단면 (실루엣 곡선을 따라 파란색 선 그리기)
         for i in range(len(top_waist_path) - 1):
             p1 = (int(top_waist_path[i][0]), int(top_waist_path[i][1]))
             p2 = (int(top_waist_path[i+1][0]), int(top_waist_path[i+1][1]))
-            cv2.line(debug_img, p1, p2, (255, 100, 100), 3)
+            cv2.line(debug_img, p1, p2, (255, 100, 100), thick)
 
         draw_point(waist_l, (255, 100, 100), "Waist L")
         draw_point(waist_r, (255, 100, 100), "Waist R")
         draw_point(waist_center_top, (255, 100, 100), "Waist C")
-        cv2.putText(debug_img, f"Waist {round(waist_cm,1)}cm", (int(waist_center_top[0]) - 50, int(waist_center_top[1]) - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 100, 100), 2)
+        cv2.putText(debug_img, f"Waist {round(waist_cm,1)}cm", (int(waist_center_top[0]) - int(50*base_scale), int(waist_center_top[1]) - int(20*base_scale)), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 100, 100), thick)
 
         draw_point(crotch_pt, (100, 255, 100), "Crotch")
         draw_line(waist_center_top, crotch_pt, (100, 255, 100), f"Rise {round(rise_cm,1)}cm")

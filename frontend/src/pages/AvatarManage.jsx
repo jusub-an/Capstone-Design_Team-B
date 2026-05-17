@@ -5,16 +5,20 @@ import { ArrowLeft, User, Ruler, RefreshCw } from 'lucide-react';
 const BASE = 'http://localhost:8000';
 
 const MEASURE_LABELS = {
-  shoulder:     { label: '어깨 너비',   unit: 'cm' },
-  chest:        { label: '가슴 둘레',   unit: 'cm' },
-  waist:        { label: '허리 둘레',   unit: 'cm' },
-  hip:          { label: '엉덩이 둘레', unit: 'cm' },
-  thigh:        { label: '허벅지 둘레', unit: 'cm' },
-  sleeve:       { label: '소매 길이',   unit: 'cm' },
-  inseam:       { label: '인심',        unit: 'cm' },
-  neck:         { label: '목 둘레',     unit: 'cm' },
-  torso_length: { label: '상체 길이',   unit: 'cm' },
-  leg_length:   { label: '다리 길이',   unit: 'cm' },
+  shoulder:            { label: '어깨 너비',   unit: 'cm' },
+  chest:               { label: '가슴 너비',   unit: 'cm' },
+  waist:               { label: '허리 너비',   unit: 'cm' },
+  hip:                 { label: '골반 너비',   unit: 'cm' },
+  thigh:               { label: '허벅지 너비', unit: 'cm' },
+  chest_circumference: { label: '가슴 둘레',   unit: 'cm' },
+  waist_circumference: { label: '허리 둘레',   unit: 'cm' },
+  hip_circumference:   { label: '골반 둘레',   unit: 'cm' },
+  thigh_circumference: { label: '허벅지 둘레', unit: 'cm' },
+  sleeve:              { label: '소매 길이',   unit: 'cm' },
+  inseam:              { label: '인심',        unit: 'cm' },
+  neck:                { label: '목 둘레',     unit: 'cm' },
+  torso_length:        { label: '상체 길이',   unit: 'cm' },
+  leg_length:          { label: '다리 길이',   unit: 'cm' },
 };
 
 function AvatarManage() {
@@ -176,7 +180,8 @@ function AvatarManage() {
               {measurements.length > 0 ? (
                 <div style={{ display: 'grid', gap: '8px' }}>
                   {measurements.map((m, i) => {
-                    const info = MEASURE_LABELS[m.key] || { label: m.key, unit: 'cm' };
+                    const info = MEASURE_LABELS[m.key] || { unit: 'cm' };
+                    const displayLabel = m.label || info.label || m.key;
                     return (
                       <div
                         key={i}
@@ -187,7 +192,7 @@ function AvatarManage() {
                         }}
                       >
                         <span style={{ fontSize: '0.88rem', color: '#64748b', fontWeight: 500 }}>
-                          {info.label}
+                          {displayLabel}
                         </span>
                         <span style={{ fontSize: '0.95rem', fontWeight: 700, color: '#1e293b' }}>
                           {typeof m.value_cm === 'number' ? m.value_cm.toFixed(1) : m.value_cm} {info.unit}

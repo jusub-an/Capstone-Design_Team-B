@@ -129,6 +129,20 @@ class BodyMeasureEngine:
         ankle_y    = int((lm27["y"] + lm28["y"]) / 2)
         spine_x    = int((lm11["x"] + lm12["x"]) / 2)
 
+        # ── 팔/다리 벌림 각도 계산 (가상 피팅 옷 렌더링 시 사용) ──
+        def _calc_angle_from_horizontal(pt1, pt2):
+            dx = abs(pt2["x"] - pt1["x"])
+            dy = pt2["y"] - pt1["y"]
+            return math.degrees(math.atan2(dy, dx))
+
+        def _calc_angle_from_vertical(pt1, pt2):
+            dx = abs(pt2["x"] - pt1["x"])
+            dy = pt2["y"] - pt1["y"]
+            return math.degrees(math.atan2(dx, dy))
+
+        arm_angle = (_calc_angle_from_horizontal(lm11, lm13) + _calc_angle_from_horizontal(lm12, lm14)) / 2
+        leg_angle = (_calc_angle_from_vertical(lm23, lm25) + _calc_angle_from_vertical(lm24, lm26)) / 2
+
         # ══════════════════════════════════════
         # 1. 어깨너비 (→ 상의 shoulder)
         #    어깨 관절 Y에서 외측 X를 찾은 후, 그 X에서 위로 올라가
@@ -200,9 +214,12 @@ class BodyMeasureEngine:
         #    사타구니~무릎 구간(상위 30%) 스캔 → 최대 단일 다리 폭
         # ══════════════════════════════════════
         thigh_span = None
+        thigh_y = None
         if crotch is not None:
             thigh_span = self._find_max_thigh_width(
                 mask, crotch, lm25, lm26, knee_y)
+            if thigh_span is not None:
+                thigh_y = thigh_span["p_start"]["y"]
 
         # ══════════════════════════════════════
         # 8. 밑위길이 (→ 하의 rise)
@@ -359,8 +376,9 @@ class BodyMeasureEngine:
                 chest_ratio = (armpit_y - top_y) / _front_total * 0.90 if armpit_y is not None else 0.26
                 waist_ratio = (_waist_y - top_y) / _front_total   # 상의 허리
                 hip_ratio   = (pants_waist_y - top_y) / _front_total  # 골반
+                thigh_ratio = (thigh_y - top_y) / _front_total if thigh_y is not None else None
                 side_depths = self._extract_depth_measurements(
-                    side_image_bgr, chest_ratio, waist_ratio, hip_ratio, user_height_cm)
+                    side_image_bgr, chest_ratio, waist_ratio, hip_ratio, thigh_ratio, user_height_cm)
                 if side_depths:
                     side_debug_image = side_depths.get("debug_image")
                     chest_d = side_depths.get("chest_depth_cm")
@@ -393,8 +411,29 @@ class BodyMeasureEngine:
                             "value_cm": round(hip_circ, 1),
                             "width_px": None, "p_start": None, "p_end": None,
                         })
+                    thigh_d = side_depths.get("thigh_depth_cm")
+                    thigh_w = (thigh_span["width_px"] * cm_per_pixel) if thigh_span is not None else None
+                    if thigh_d is not None and thigh_w is not None:
+                        a, b = thigh_w / 2, thigh_d / 2
+                        thigh_circ = 2 * math.pi * math.sqrt((a ** 2 + b ** 2) / 2)
+                        measurements.append({
+                            "key": "thigh_circumference", "label": "허벅지둘레",
+                            "value_cm": round(thigh_circ, 1),
+                            "width_px": None, "p_start": None, "p_end": None,
+                        })
             except Exception as _side_err:
                 warnings.append(f"측면 사진 분석 실패: {str(_side_err)[:60]}")
+
+        measurements.append({
+            "key": "arm_angle", "label": "팔 벌림 각도",
+            "value_cm": round(arm_angle, 1),
+            "width_px": None, "p_start": None, "p_end": None,
+        })
+        measurements.append({
+            "key": "leg_angle", "label": "다리 벌림 각도",
+            "value_cm": round(leg_angle, 1),
+            "width_px": None, "p_start": None, "p_end": None,
+        })
 
         debug_image = self._draw_debug(image_bgr, landmarks, top_y, bottom_y,
                                        armpits, crotch, measurements)
@@ -414,6 +453,8 @@ class BodyMeasureEngine:
                 "left_armpit":  armpits["left_armpit"],
                 "right_armpit": armpits["right_armpit"],
                 "crotch":       crotch,
+                "arm_angle":    round(arm_angle, 1),
+                "leg_angle":    round(leg_angle, 1),
             },
             "measurements":      measurements,
             "debug_image":       debug_image,
@@ -1047,6 +1088,7 @@ class BodyMeasureEngine:
         chest_ratio: float,
         waist_ratio: float,
         hip_ratio: float,
+        thigh_ratio: Optional[float],
         user_height_cm: float,
     ) -> Optional[Dict[str, Any]]:
         """
@@ -1078,9 +1120,10 @@ class BodyMeasureEngine:
         cm_per_pixel = user_height_cm / pixel_height
 
         # 비율로 측면 Y 위치 결정: 정면 mask_bottom 기준 ratio → 측면 mask_bottom 기준 ty
-        chest_ty = int(top_y + chest_ratio * pixel_height)
+        chest_ty  = int(top_y + chest_ratio * pixel_height)
         waist_ty  = int(top_y + waist_ratio  * pixel_height)
         hip_ty    = int(top_y + hip_ratio    * pixel_height)
+        thigh_ty  = int(top_y + thigh_ratio  * pixel_height) if thigh_ratio is not None else None
 
         seg_float = alpha_arr / 255.0
         _, dbg = self._build_visual_images(side_bgr, seg_float, raw_mask)
@@ -1111,12 +1154,14 @@ class BodyMeasureEngine:
         chest_d = _draw_depth_line(chest_ty, (200,   0, 200), "가슴깊이")
         waist_d  = _draw_depth_line(waist_ty,  (0,  140, 255), "허리깊이")
         hip_d    = _draw_depth_line(hip_ty,    (0,   0, 220), "골반깊이")
+        thigh_d  = _draw_depth_line(thigh_ty,  (0, 200,   0), "허벅지깊이") if thigh_ty is not None else None
         dbg = self._pil_draw_texts(dbg, text_tasks)
 
         return {
             "chest_depth_cm": chest_d,
             "waist_depth_cm": waist_d,
             "hip_depth_cm":   hip_d,
+            "thigh_depth_cm": thigh_d,
             "debug_image":    dbg,
         }
 

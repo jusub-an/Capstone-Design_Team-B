@@ -174,32 +174,36 @@ function VirtualFitting() {
 
   // ── auto calculate sleeve angle ──────────────────────────────────
   const getAutoSleeveAngle = useCallback(() => {
-    if (!selectedSize || !productInfo?.category?.name?.includes('상의') || !avatar) return 65;
-    let heightRatio = 1;
-    if (avatar.measurements) {
+    if (avatar && avatar.measurements) {
       try {
         const m = typeof avatar.measurements === 'string' ? JSON.parse(avatar.measurements) : avatar.measurements;
-        // new format: { items: [...], height_ratio: N }
-        // old format: [...] array
-        if (m && m.height_ratio) heightRatio = m.height_ratio;
+        if (m && m.anchors && m.anchors.arm_angle) return m.anchors.arm_angle;
+        if (m && m.items) {
+          const armItem = m.items.find(i => i.key === 'arm_angle');
+          if (armItem) return armItem.value_cm;
+        }
       } catch(e) {}
     }
-    const px_per_cm = DRAW_H / (avatar.height_cm * heightRatio);
-    const getVal = (val, defaultVal) => (val && val > 0) ? val : defaultVal;
-    
-    const shoulderWidth = getVal(selectedSize.shoulder, 45) * px_per_cm;
-    const chestWidth = getVal(selectedSize.chest, 50) * px_per_cm;
-    const sleeveLength = getVal(selectedSize.sleeve_length, 20) * px_per_cm;
-    const sleeveOpening = getVal(selectedSize.sleeve, 16) * px_per_cm;
-    
-    const dx = chestWidth/2 - shoulderWidth/2;
-    const R = Math.sqrt(sleeveLength*sleeveLength + sleeveOpening*sleeveOpening);
-    if (R > 0 && Math.abs(dx / R) <= 1) {
-      let calc = (Math.acos(dx / R) - Math.atan2(sleeveOpening, sleeveLength)) * 180 / Math.PI;
-      return isNaN(calc) ? 65 : Math.max(0, Math.min(90, calc));
+    if (productInfo?.category?.name?.includes('상의') && selectedSize) {
+      const isShortSleeve = (selectedSize.sleeve_length || 0) < 30;
+      return isShortSleeve ? 45 : 65;
     }
     return 65;
   }, [selectedSize, productInfo, avatar]);
+
+  const getLegAngle = useCallback(() => {
+    if (avatar && avatar.measurements) {
+      try {
+        const m = typeof avatar.measurements === 'string' ? JSON.parse(avatar.measurements) : avatar.measurements;
+        if (m && m.anchors && m.anchors.leg_angle) return m.anchors.leg_angle;
+        if (m && m.items) {
+          const legItem = m.items.find(i => i.key === 'leg_angle');
+          if (legItem) return legItem.value_cm;
+        }
+      } catch(e) {}
+    }
+    return 0;
+  }, [avatar]);
 
   const currentSleeveAngle = sleeveAngle === 'auto' ? getAutoSleeveAngle() : sleeveAngle;
 
@@ -249,6 +253,32 @@ function VirtualFitting() {
       const getVal = (val, defaultVal) => (val && val > 0) ? val : defaultVal;
       const getLabel = (name, val) => (val && val > 0) ? `${name} ${val}cm` : `${name} 정보 없음`;
       const isMissing = (val) => !(val && val > 0);
+
+      // --- NEW LOGIC: Circumference based rendering (3D -> 2D Drape Simulation) ---
+      const calcRenderWidth = (clothingFlat, userCirc, userFlat, defaultFlat) => {
+        const flat = getVal(clothingFlat, defaultFlat);
+        if (!userFlat) return flat * px_per_cm;
+        
+        // 만약 DB에서 추출한 실제 '둘레' 데이터가 있다면 (단면 추론 절대 안 함)
+        if (userCirc) {
+          const clothingCirc = flat * 2;
+          const ease = clothingCirc - userCirc;
+          if (ease < 0) {
+            return userFlat * px_per_cm;
+          } else {
+            // 원주율(PI)을 적용하여 3D 둘레 증가분을 2D 너비 증가분으로 정확히 변환
+            return (userFlat + ease / Math.PI) * px_per_cm;
+          }
+        } else {
+          // 둘레 데이터가 없다면 (단면/길이 항목이거나 DB에 없는 경우) 단면 vs 단면
+          const ease = flat - userFlat;
+          if (ease < 0) {
+            return userFlat * px_per_cm;
+          } else {
+            return (userFlat + ease / 1.5) * px_per_cm;
+          }
+        }
+      };
 
       const drawDimLine = (x1, y1, x2, y2, text, offsetX = 0, offsetY = 0, missing = false) => {
         ctx.save();
@@ -313,7 +343,10 @@ function VirtualFitting() {
 
         const neckWidth = getVal(neckVal, 15) * px_per_cm;
         const shoulderWidth = getVal(shoulderVal, 40) * px_per_cm;
-        const chestWidth = getVal(chestVal, 50) * px_per_cm;
+        
+        // Use Circumference-based Chest Width calculation
+        const chestWidth = calcRenderWidth(chestVal, getAvatarMeasure('chest_circumference'), getAvatarMeasure('chest'), 50);
+        
         const totalLength = getVal(lengthVal, 65) * px_per_cm;
         const sleeveLength = getVal(sleeveVal, 20) * px_per_cm;
         
@@ -333,6 +366,7 @@ function VirtualFitting() {
         const ry1 = startY + shoulderDrop + sleeveLength * Math.sin(angle);
         ctx.lineTo(rx1, ry1);
         
+        // 소매폭은 그릴 수 없음(팔둘레 정보 없으므로) -> 그냥 의류 단면 정보 사용
         const sleeveOpening = getVal(sleeveWidthVal, 16) * px_per_cm;
         const rx2 = rx1 - sleeveOpening * Math.sin(angle);
         const ry2 = ry1 + sleeveOpening * Math.cos(angle);
@@ -377,10 +411,9 @@ function VirtualFitting() {
           const sy2 = sy1 + sleeveLength * Math.sin(angle);
           drawDimLine(sx1, sy1 - 10, sx2, sy2 - 10, getLabel('소매길이', sleeveVal), 0, -12, isMissing(sleeveVal));
           
-          const sleeveOpening = getVal(sleeveWidthVal, 16) * px_per_cm;
           const sx3 = sx2 - sleeveOpening * Math.sin(angle);
           const sy3 = sy2 + sleeveOpening * Math.cos(angle);
-          // 소매단면 치수선 (살짝 옆으로 띄워서 표시)
+          // 소매단면 치수선
           drawDimLine(sx2 + 5, sy2 + 5, sx3 + 5, sy3 + 5, getLabel('소매단면', sleeveWidthVal), 10, 0, isMissing(sleeveWidthVal));
           
           drawDimLine(centerX - neckWidth/2, startY - 10, centerX + neckWidth/2, startY - 10, getLabel('목폭', neckVal), 0, -10, isMissing(neckVal));
@@ -393,8 +426,12 @@ function VirtualFitting() {
         const riseVal = selectedSize.rise;
         const hemVal = selectedSize.hem;
 
-        const waistWidth = getVal(waistVal, 35) * px_per_cm;
-        const thighWidth = getVal(thighVal, 25) * px_per_cm;
+        // Use Circumference-based Waist Width calculation
+        const waistWidth = calcRenderWidth(waistVal, getAvatarMeasure('waist_circumference'), getAvatarMeasure('waist'), 35);
+        
+        // Use Circumference-based Thigh calculation
+        const thighWidth = calcRenderWidth(thighVal, getAvatarMeasure('thigh_circumference'), getAvatarMeasure('thigh'), 25);
+        
         const totalLength = getVal(lengthVal, 100) * px_per_cm;
         const riseLength = getVal(riseVal, 25) * px_per_cm;
         const hemWidth = getVal(hemVal, 20) * px_per_cm;
@@ -403,19 +440,40 @@ function VirtualFitting() {
         // Waist curved slightly
         ctx.quadraticCurveTo(centerX, startY + 2*px_per_cm, centerX + waistWidth/2, startY);
         
+        const legAngleRad = getLegAngle() * Math.PI / 180;
+        
+        // Shrink hemWidth proportionally if thighWidth was shrunk by projection
+        const rawThighWidth = getVal(thighVal, 25) * px_per_cm;
+        const thighRatio = rawThighWidth > 0 ? (thighWidth / rawThighWidth) : 1;
+        const renderHemWidth = getVal(hemVal, 20) * px_per_cm * Math.max(thighRatio, 0.4);
+
+        const hemOffsetX = (totalLength - riseLength) * Math.sin(legAngleRad);
+        const hemOffsetY = (totalLength - riseLength) * Math.cos(legAngleRad) - (totalLength - riseLength);
+        
+        const rightThighCenterX = centerX + thighWidth/2;
+        const leftThighCenterX = centerX - thighWidth/2;
+        
+        const rightHemOuterX = rightThighCenterX + hemOffsetX + renderHemWidth/2;
+        const rightHemInnerX = rightThighCenterX + hemOffsetX - renderHemWidth/2;
+        const rightHemY = startY + totalLength + hemOffsetY;
+        
+        const leftHemOuterX = leftThighCenterX - hemOffsetX - renderHemWidth/2;
+        const leftHemInnerX = leftThighCenterX - hemOffsetX + renderHemWidth/2;
+        const leftHemY = startY + totalLength + hemOffsetY;
+
         // Right outer hip curve
         ctx.quadraticCurveTo(centerX + thighWidth, startY + riseLength/2, centerX + thighWidth, startY + riseLength);
-        ctx.lineTo(centerX + thighWidth/2 + hemWidth/2, startY + totalLength);
+        ctx.lineTo(rightHemOuterX, rightHemY);
         
         // Right hem curve
-        ctx.quadraticCurveTo(centerX + thighWidth/2, startY + totalLength + 1.5*px_per_cm, centerX + thighWidth/2 - hemWidth/2, startY + totalLength);
+        ctx.quadraticCurveTo(rightThighCenterX + hemOffsetX, rightHemY + 1.5*px_per_cm, rightHemInnerX, rightHemY);
         
         // Crotch curve
         ctx.quadraticCurveTo(centerX + 2*px_per_cm, startY + riseLength, centerX, startY + riseLength);
-        ctx.quadraticCurveTo(centerX - 2*px_per_cm, startY + riseLength, centerX - thighWidth/2 + hemWidth/2, startY + totalLength);
+        ctx.quadraticCurveTo(centerX - 2*px_per_cm, startY + riseLength, leftHemInnerX, leftHemY);
         
         // Left hem curve
-        ctx.quadraticCurveTo(centerX - thighWidth/2, startY + totalLength + 1.5*px_per_cm, centerX - thighWidth/2 - hemWidth/2, startY + totalLength);
+        ctx.quadraticCurveTo(leftThighCenterX - hemOffsetX, leftHemY + 1.5*px_per_cm, leftHemOuterX, leftHemY);
         ctx.lineTo(centerX - thighWidth, startY + riseLength);
         
         // Left outer hip curve
@@ -490,35 +548,98 @@ function VirtualFitting() {
     } catch(e) { return null; }
   };
 
-  const fitBadge = (userVal, clothingVal) => {
-    if (userVal == null || clothingVal == null) return null;
-    const diff = userVal - clothingVal;
-    const [label, color] =
-      diff > 3  ? ['타이트', '#ef4444'] :
-      diff < -5 ? ['루즈',   '#f59e0b'] :
-                  ['적정',   '#22c55e'];
+  const isTop = productInfo?.category?.name?.includes('상의') ?? true;
+  
+  // ── NEW Visual Fit Diagnosis UI Component ──
+  const FitVisualizer = ({ label, clothingVal, userCirc, userFlat, canBeCircumference }) => {
+    if (!clothingVal) return null;
+    
+    let ease = 0;
+    let statusText = '';
+    let color = '';
+    let percent = 50;
+    let userDisplay = '';
+    let clothDisplay = '';
+
+    // 사용자 DB에 실제 둘레 데이터가 존재하는 경우에만 '둘레 기반 분석' 진행
+    const useCirc = canBeCircumference && userCirc != null;
+
+    if (useCirc) {
+      // 의류 단면을 2배하여 원단 총 둘레 도출
+      const clothingCirc = clothingVal * 2;
+      ease = clothingCirc - userCirc;
+      
+      // DB 실수 그대로 사용 (어떠한 반올림도 없음)
+      userDisplay = `${userCirc}cm`;
+      clothDisplay = `${clothingCirc}cm`;
+      
+      if (ease < -2) {
+        statusText = `매우 타이트 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#ef4444'; percent = 10;
+      } else if (ease < 4) {
+        statusText = `슬림 핏 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#84cc16'; percent = 30;
+      } else if (ease < 10) {
+        statusText = `레귤러 핏 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#22c55e'; percent = 50;
+      } else if (ease < 18) {
+        statusText = `루즈 핏 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#3b82f6'; percent = 75;
+      } else {
+        statusText = `오버사이즈 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#8b5cf6'; percent = 95;
+      }
+    } else {
+      // 단면/길이 기반 분석
+      if (!userFlat) return null;
+      ease = clothingVal - userFlat;
+      userDisplay = `${userFlat}cm`;
+      clothDisplay = `${clothingVal}cm`;
+
+      if (ease < -2) {
+        statusText = `짧음/타이트 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#ef4444'; percent = 10;
+      } else if (ease < 2) {
+        statusText = `저스트 핏 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#84cc16'; percent = 30;
+      } else if (ease < 6) {
+        statusText = `레귤러 핏 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#22c55e'; percent = 50;
+      } else {
+        statusText = `여유/김 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#3b82f6'; percent = 80;
+      }
+    }
+
     return (
-      <span style={{
-        fontSize: '0.7rem', fontWeight: 700, padding: '1px 7px', borderRadius: '20px',
-        background: color + '20', color, border: `1px solid ${color}40`,
-      }}>
-        {label} ({diff >= 0 ? '+' : ''}{diff.toFixed(1)})
-      </span>
+      <div style={{ marginBottom: '18px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '8px' }}>
+          <span style={{ fontWeight: 700, color: '#334155' }}>
+            {label}
+          </span>
+          <span style={{ fontWeight: 800, color }}>{statusText}</span>
+        </div>
+        
+        {/* 중앙 기준 핏 게이지 바 */}
+        <div style={{ position: 'relative', height: '6px', background: '#e2e8f0', borderRadius: '3px', margin: '6px 0' }}>
+          <div style={{ position: 'absolute', left: '50%', top: '-4px', bottom: '-4px', width: '2px', background: '#cbd5e1', zIndex: 1 }} />
+          <div style={{ 
+            position: 'absolute', top: 0, bottom: 0, 
+            left: percent < 50 ? `${percent}%` : '50%', 
+            right: percent > 50 ? `${100 - percent}%` : '50%',
+            background: color, borderRadius: '3px', transition: 'all 0.5s cubic-bezier(0.4, 0, 0.2, 1)' 
+          }} />
+          <div style={{
+            position: 'absolute', top: '50%', left: `${percent}%`, transform: 'translate(-50%, -50%)',
+            width: '12px', height: '12px', background: 'white', border: `3.5px solid ${color}`, borderRadius: '50%',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.1)', zIndex: 2, transition: 'left 0.5s cubic-bezier(0.4, 0, 0.2, 1)'
+          }} />
+        </div>
+        
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: '#94a3b8', fontWeight: 600, marginBottom: '6px' }}>
+          <span>타이트</span>
+          <span style={{ marginLeft: '6px' }}>정핏</span>
+          <span>여유로움</span>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: '#64748b', background: '#f8fafc', padding: '6px 8px', borderRadius: '6px', border: '1px solid #f1f5f9' }}>
+          <span>내 신체: <b>{userDisplay}</b></span>
+          <span>옷 치수: <b>{clothDisplay}</b></span>
+        </div>
+      </div>
     );
   };
-
-  const isTop = productInfo?.category?.name?.includes('상의') ?? true;
-  const fitPairs = isTop
-    ? [
-        { label: '어깨',     avatarKey: 'shoulder',  clothingKey: 'shoulder' },
-        { label: '가슴',     avatarKey: 'chest',     clothingKey: 'chest' },
-        { label: '소매길이', avatarKey: 'sleeve',    clothingKey: 'sleeve_length' },
-        { label: '소매넓이', avatarKey: 'arm_width', clothingKey: 'sleeve' },
-      ]
-    : [
-        { label: '허리',   avatarKey: 'waist',  clothingKey: 'waist' },
-        { label: '허벅지', avatarKey: 'thigh',  clothingKey: 'thigh' },
-      ];
 
   const getBase64ImageFromUrl = (imageUrl) => {
     return new Promise((resolve, reject) => {
@@ -720,93 +841,100 @@ ${productDetailsText}
                 >신체 측정 하러 가기</button>
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                <canvas
-                  ref={canvasRef}
-                  width={CV_W}
-                  height={CV_H}
-                  style={{ borderRadius: '16px', boxShadow: '0 4px 20px rgba(0,0,0,0.08)', display: 'block', maxWidth: '100%', maxHeight: 'calc(100vh - 260px)', aspectRatio: `${CV_W} / ${CV_H}`, cursor: isDragging ? 'grabbing' : 'grab' }}
-                  onMouseDown={handleMouseDown}
-                  onMouseMove={handleMouseMove}
-                  onMouseUp={handleMouseUpOrLeave}
-                  onMouseLeave={handleMouseUpOrLeave}
-                  onDoubleClick={handleDoubleClick}
-                />
-                <p style={{ margin: '6px 0 0', fontSize: '0.72rem', color: '#94a3b8', textAlign: 'center' }}>
-                  의류를 드래그해서 이동할 수 있습니다 (더블클릭 시 복귀)
-                </p>
-              </div>
-            )}
-
-            {/* ── size selector ── */}
-            {getSizes().length > 0 && (
-              <div style={{ width: '100%' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '10px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <p style={{ margin: 0, fontSize: '0.78rem', color: '#64748b', fontWeight: 600 }}>사이즈 선택</p>
-                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', color: '#64748b', cursor: 'pointer' }}>
-                        <input 
-                          type="checkbox" 
-                          checked={showSizeOverlay} 
-                          onChange={(e) => setShowSizeOverlay(e.target.checked)} 
-                          style={{ accentColor: '#6366f1' }}
-                        />
-                        핏 시각화
-                      </label>
-                      {showSizeOverlay && (
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', color: '#64748b', cursor: 'pointer' }}>
-                          <input 
-                            type="checkbox" 
-                            checked={showDimLines} 
-                            onChange={(e) => setShowDimLines(e.target.checked)} 
-                            style={{ accentColor: '#ef4444' }}
-                          />
-                          치수선 보기
-                        </label>
-                      )}
-                    </div>
-                  </div>
+              <div style={{ display: 'flex', flexDirection: 'row', width: '100%', gap: '30px', alignItems: 'flex-start', justifyContent: 'center', flexWrap: 'wrap' }}>
+                
+                {/* ── Left: Canvas ── */}
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
+                  <canvas
+                    ref={canvasRef}
+                    width={CV_W}
+                    height={CV_H}
+                    style={{ borderRadius: '16px', boxShadow: '0 4px 20px rgba(0,0,0,0.08)', display: 'block', maxWidth: '100%', maxHeight: 'calc(100vh - 260px)', aspectRatio: `${CV_W} / ${CV_H}`, cursor: isDragging ? 'grabbing' : 'grab' }}
+                    onMouseDown={handleMouseDown}
+                    onMouseMove={handleMouseMove}
+                    onMouseUp={handleMouseUpOrLeave}
+                    onMouseLeave={handleMouseUpOrLeave}
+                    onDoubleClick={handleDoubleClick}
+                  />
+                  <p style={{ margin: '6px 0 0', fontSize: '0.72rem', color: '#94a3b8', textAlign: 'center' }}>
+                    의류를 드래그해서 이동할 수 있습니다 (더블클릭 시 복귀)
+                  </p>
                 </div>
-                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                  {getSizes().map(s => (
-                    <button
-                      key={s.size_name}
-                      onClick={() => setSelectedSize(s)}
-                      style={{
-                        padding: '5px 13px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 600,
-                        border: `1.5px solid ${selectedSize?.size_name === s.size_name ? '#6366f1' : '#e2e8f0'}`,
-                        background: selectedSize?.size_name === s.size_name ? '#eef2ff' : 'white',
-                        color: selectedSize?.size_name === s.size_name ? '#6366f1' : '#64748b',
-                        cursor: 'pointer',
-                      }}
-                    >{s.size_name}</button>
-                  ))}
-                </div>
-              </div>
-            )}
 
-            {/* ── fit analysis for selected size ── */}
-            {selectedSize && avatar?.measurements && (
-              <div style={{ width: '100%', maxWidth: `${CV_W}px`, background: '#f8fafc', borderRadius: '12px', padding: '10px 14px' }}>
-                <p style={{ margin: '0 0 8px', fontSize: '0.78rem', fontWeight: 700, color: '#334155' }}>
-                  핏 분석 ({selectedSize.size_name})
-                </p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                  {fitPairs.map(({ label, avatarKey, clothingKey }) => {
-                    const userVal = getAvatarMeasure(avatarKey);
-                    const clothingVal = selectedSize[clothingKey];
-                    if (clothingVal == null) return null;
-                    return (
-                      <div key={clothingKey} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.78rem' }}>
-                        <span style={{ color: '#64748b', minWidth: '36px' }}>{label}</span>
-                        <span style={{ color: '#475569' }}>
-                          {userVal != null ? `내 ${userVal.toFixed(1)} / 의류 ${clothingVal}` : `의류 ${clothingVal} cm`}
-                        </span>
-                        {fitBadge(userVal, clothingVal)}
+                {/* ── Right: Size Selector & Fit Analysis ── */}
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '20px', minWidth: '280px', maxWidth: '340px' }}>
+                  
+                  {/* ── size selector ── */}
+                  {getSizes().length > 0 && (
+                    <div style={{ width: '100%' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '10px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <p style={{ margin: 0, fontSize: '0.78rem', color: '#64748b', fontWeight: 600 }}>사이즈 선택</p>
+                          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', color: '#64748b', cursor: 'pointer' }}>
+                              <input 
+                                type="checkbox" 
+                                checked={showSizeOverlay} 
+                                onChange={(e) => setShowSizeOverlay(e.target.checked)} 
+                                style={{ accentColor: '#6366f1' }}
+                              />
+                              핏 시각화
+                            </label>
+                            {showSizeOverlay && (
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', color: '#64748b', cursor: 'pointer' }}>
+                                <input 
+                                  type="checkbox" 
+                                  checked={showDimLines} 
+                                  onChange={(e) => setShowDimLines(e.target.checked)} 
+                                  style={{ accentColor: '#ef4444' }}
+                                />
+                                치수선 보기
+                              </label>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                    );
-                  })}
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        {getSizes().map(s => (
+                          <button
+                            key={s.size_name}
+                            onClick={() => setSelectedSize(s)}
+                            style={{
+                              padding: '5px 13px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 600,
+                              border: `1.5px solid ${selectedSize?.size_name === s.size_name ? '#6366f1' : '#e2e8f0'}`,
+                              background: selectedSize?.size_name === s.size_name ? '#eef2ff' : 'white',
+                              color: selectedSize?.size_name === s.size_name ? '#6366f1' : '#64748b',
+                              cursor: 'pointer',
+                            }}
+                          >{s.size_name}</button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── fit analysis for selected size ── */}
+                  {selectedSize && avatar?.measurements && (
+                    <div style={{ width: '100%', background: '#ffffff', borderRadius: '14px', padding: '16px', boxShadow: '0 4px 14px rgba(0,0,0,0.03)', border: '1px solid #f1f5f9' }}>
+                      <p style={{ margin: '0 0 16px', fontSize: '0.85rem', fontWeight: 800, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Sparkles size={16} color="#6366f1" /> 정밀 핏 분석 ({selectedSize.size_name})
+                      </p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {isTop ? (
+                          <>
+                            <FitVisualizer label="어깨너비" clothingVal={selectedSize.shoulder} userCirc={null} userFlat={getAvatarMeasure('shoulder')} canBeCircumference={false} />
+                            <FitVisualizer label="상체길이" clothingVal={selectedSize.length} userCirc={null} userFlat={getAvatarMeasure('top_length')} canBeCircumference={false} />
+                            <FitVisualizer label="가슴둘레" clothingVal={selectedSize.chest} userCirc={getAvatarMeasure('chest_circumference')} userFlat={null} canBeCircumference={true} />
+                          </>
+                        ) : (
+                          <>
+                            <FitVisualizer label="허리둘레" clothingVal={selectedSize.waist} userCirc={getAvatarMeasure('waist_circumference')} userFlat={null} canBeCircumference={true} />
+                            <FitVisualizer label="허벅지둘레" clothingVal={selectedSize.thigh} userCirc={getAvatarMeasure('thigh_circumference')} userFlat={null} canBeCircumference={true} />
+                            <FitVisualizer label="하반신길이" clothingVal={selectedSize.length} userCirc={null} userFlat={getAvatarMeasure('bottom_length')} canBeCircumference={false} />
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

@@ -211,13 +211,13 @@ function SizeReviewRegister() {
 
   const cropToBlob = (rect) => {
     const temp = document.createElement('canvas');
-    temp.width = rect.w; 
-    temp.height = rect.h;
     const sx = rect.x / scaleFactor;
     const sy = rect.y / scaleFactor;
     const sw = rect.w / scaleFactor;
     const sh = rect.h / scaleFactor;
-    temp.getContext('2d').drawImage(imgRef.current, sx, sy, sw, sh, 0, 0, rect.w, rect.h);
+    temp.width = sw; 
+    temp.height = sh;
+    temp.getContext('2d').drawImage(imgRef.current, sx, sy, sw, sh, 0, 0, sw, sh);
     return new Promise(res => temp.toBlob(res, 'image/jpeg'));
   };
 
@@ -232,25 +232,25 @@ function SizeReviewRegister() {
       const reqFormData = new FormData();
       reqFormData.append('shirt_image', shirtBlob, 'shirt.jpg');
       reqFormData.append('a4_image', a4Blob, 'a4.jpg');
-      reqFormData.append('shirt_x', rectShirt.x.toString());
-      reqFormData.append('shirt_y', rectShirt.y.toString());
-      reqFormData.append('shirt_w', rectShirt.w.toString());
-      reqFormData.append('shirt_h', rectShirt.h.toString());
-      reqFormData.append('a4_x', rectA4.x.toString());
-      reqFormData.append('a4_y', rectA4.y.toString());
-      reqFormData.append('a4_w', rectA4.w.toString());
-      reqFormData.append('a4_h', rectA4.h.toString());
-      reqFormData.append('orig_w', canvasRef.current.width.toString());
-      reqFormData.append('orig_h', canvasRef.current.height.toString());
+      reqFormData.append('shirt_x', (rectShirt.x / scaleFactor).toString());
+      reqFormData.append('shirt_y', (rectShirt.y / scaleFactor).toString());
+      reqFormData.append('shirt_w', (rectShirt.w / scaleFactor).toString());
+      reqFormData.append('shirt_h', (rectShirt.h / scaleFactor).toString());
+      reqFormData.append('a4_x', (rectA4.x / scaleFactor).toString());
+      reqFormData.append('a4_y', (rectA4.y / scaleFactor).toString());
+      reqFormData.append('a4_w', (rectA4.w / scaleFactor).toString());
+      reqFormData.append('a4_h', (rectA4.h / scaleFactor).toString());
+      reqFormData.append('orig_w', (canvasRef.current.width / scaleFactor).toString());
+      reqFormData.append('orig_h', (canvasRef.current.height / scaleFactor).toString());
       
       const category_type = product?.category?.name.includes('상의') ? 'Top' : 'Bottom';
       reqFormData.append('category_type', category_type);
 
       if (category_type === 'Top' && shoulderPts.length === 2) {
-        reqFormData.append('shoulder_x1', shoulderPts[0].x.toString());
-        reqFormData.append('shoulder_y1', shoulderPts[0].y.toString());
-        reqFormData.append('shoulder_x2', shoulderPts[1].x.toString());
-        reqFormData.append('shoulder_y2', shoulderPts[1].y.toString());
+        reqFormData.append('shoulder_x1', (shoulderPts[0].x / scaleFactor).toString());
+        reqFormData.append('shoulder_y1', (shoulderPts[0].y / scaleFactor).toString());
+        reqFormData.append('shoulder_x2', (shoulderPts[1].x / scaleFactor).toString());
+        reqFormData.append('shoulder_y2', (shoulderPts[1].y / scaleFactor).toString());
       }
 
       const response = await fetch('http://localhost:8000/api/measure/clothing', {
