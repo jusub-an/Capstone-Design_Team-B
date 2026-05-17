@@ -285,8 +285,8 @@ class ClothingMeasureEngine:
 
         armpit_l = None
         armpit_r = None
-        min_y_l_def = 99999
-        min_y_r_def = 99999
+        max_depth_l = -1
+        max_depth_r = -1
         idx_al = -1
         idx_ar = -1
 
@@ -298,13 +298,13 @@ class ClothingMeasureEngine:
 
                 if depth > 10.0 and (y + h * 0.15) < fy < (y + h * 0.6):
                     if fx < mid_x:
-                        if fy < min_y_l_def:
-                            min_y_l_def = fy
+                        if depth > max_depth_l:
+                            max_depth_l = depth
                             armpit_l = (fx, fy)
                             idx_al = f
                     else:
-                        if fy < min_y_r_def:
-                            min_y_r_def = fy
+                        if depth > max_depth_r:
+                            max_depth_r = depth
                             armpit_r = (fx, fy)
                             idx_ar = f
 
