@@ -503,8 +503,8 @@ function ProductDetail() {
               <div className="size-reviews-section">
                 <div className="sr-header-row">
                   <h4 className="sr-title">사이즈 실측 후기 ({sizeReviews.length})</h4>
-                  <button className="btn-register-size-review" onClick={() => isLoggedIn ? navigate(`/size-reviews/new/${id}`) : (alert('로그인이 필요합니다.'), navigate('/login'))}>
-                    사이즈 후기 등록하기
+                  <button className="btn-register-size-review" onClick={() => isLoggedIn ? navigate(`/reviews/new/${id}`) : (alert('로그인이 필요합니다.'), navigate('/login'))}>
+                    리뷰 및 실측 후기 남기기
                   </button>
                 </div>
                 
@@ -585,8 +585,8 @@ function ProductDetail() {
                             <button className="my-sr-btn delete" onClick={() => handleDeleteSizeReview(sr.id)}>
                               <Trash2 size={14} /> 삭제하기
                             </button>
-                            <button className="my-sr-btn edit" onClick={() => navigate(`/size-reviews/new/${id}`)}>
-                              <Edit2 size={14} /> 정정하기(새로 작성)
+                            <button className="my-sr-btn edit" onClick={() => { alert('사이즈 후기는 삭제 후 리뷰 작성 페이지에서 다시 등록해주세요.'); }}>
+                              <Edit2 size={14} /> 정정 안내
                             </button>
                           </div>
                         </div>

@@ -687,45 +687,18 @@ async def create_size_review(
     db: Session = Depends(get_db)
 ):
     try:
-        existing_review = db.query(models.SizeReview).filter(
-            models.SizeReview.product_id == product_id,
-            models.SizeReview.user_email == user_email
-        ).first()
-
-        if existing_review:
-            # 기존 리뷰 수정
-            existing_review.size_name = size_name
-            existing_review.length = length
-            existing_review.chest_or_waist = chest_or_waist
-            existing_review.shoulder_or_thigh = shoulder_or_thigh
-            existing_review.sleeve_or_rise = sleeve_or_rise
-            existing_review.sleeve_length = sleeve_length
-            existing_review.neck_or_hem = neck_or_hem
-
-            # 기존 이미지 파일 삭제
-            for img in existing_review.images:
-                file_path = os.path.join(SIZE_REVIEW_DIR, os.path.basename(img.image_url))
-                if os.path.exists(file_path):
-                    try: os.remove(file_path)
-                    except: pass
-                db.delete(img)
-            
-            new_review = existing_review
-        else:
-            # 새 리뷰 생성
-            new_review = models.SizeReview(
-                product_id=product_id,
-                user_email=user_email,
-                size_name=size_name,
-                length=length,
-                chest_or_waist=chest_or_waist,
-                shoulder_or_thigh=shoulder_or_thigh,
-                sleeve_or_rise=sleeve_or_rise,
-                sleeve_length=sleeve_length,
-                neck_or_hem=neck_or_hem
-            )
-            db.add(new_review)
-        
+        new_review = models.SizeReview(
+            product_id=product_id,
+            user_email=user_email,
+            size_name=size_name,
+            length=length,
+            chest_or_waist=chest_or_waist,
+            shoulder_or_thigh=shoulder_or_thigh,
+            sleeve_or_rise=sleeve_or_rise,
+            sleeve_length=sleeve_length,
+            neck_or_hem=neck_or_hem
+        )
+        db.add(new_review)
         db.flush()
 
         # 디버그 이미지 저장 (최종 결과 이미지)
@@ -747,6 +720,10 @@ async def create_size_review(
         db.rollback()
         print(f"Error creating size review: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/size-reviews/user/{email}", response_model=list[schemas.SizeReviewResponse])
+def get_user_size_reviews(email: str, db: Session = Depends(get_db)):
+    return db.query(models.SizeReview).options(joinedload(models.SizeReview.images)).filter(models.SizeReview.user_email == email).order_by(models.SizeReview.created_at.desc()).all()
 
 @app.get("/api/products/{product_id}/size-reviews", response_model=list[schemas.SizeReviewResponse])
 def get_product_size_reviews(product_id: int, db: Session = Depends(get_db)):

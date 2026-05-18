@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Star, Image as ImageIcon, X, Send, Loader2, Camera } from 'lucide-react';
+import { Star, Image as ImageIcon, X, Send, Loader2, Camera, RefreshCw, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
 import axios from 'axios';
+import ErrorToast from '../components/ErrorToast';
+import MeasurementWarning, { validateMeasurements } from '../components/MeasurementWarning';
 import './ReviewRegister.css';
 
 export default function ReviewRegister() {
@@ -15,7 +17,31 @@ export default function ReviewRegister() {
   const [images, setImages] = useState([]);
   const [previews, setPreviews] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [initialLoading, setInitialLoading] = useState(isEdit);
+  const [initialLoading, setInitialLoading] = useState(true);
+
+  // Size Review toggle & state
+  const [product, setProduct] = useState(null);
+  const [includeSizeReview, setIncludeSizeReview] = useState(false);
+  const [selectedSize, setSelectedSize] = useState('');
+  
+  // CV Algorithm State
+  const [cvStep, setCvStep] = useState(0); 
+  const [cvImage, setCvImage] = useState(null);
+  const [rectShirt, setRectShirt] = useState(null);
+  const [rectA4, setRectA4] = useState(null);
+  const [shoulderPts, setShoulderPts] = useState([]);
+  const [currentRect, setCurrentRect] = useState(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [startPos, setStartPos] = useState({ x: 0, y: 0 });
+  const [cvLoading, setCvLoading] = useState(false);
+  const [errorToast, setErrorToast] = useState(null);
+  const [measurementWarnings, setMeasurementWarnings] = useState([]);
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
+  const [cvResultData, setCvResultData] = useState(null);
+
+  const canvasRef = useRef(null);
+  const imgRef = useRef(null);
+  const [scaleFactor, setScaleFactor] = useState(1);
 
   const userEmail = sessionStorage.getItem('userEmail');
 
@@ -27,8 +53,21 @@ export default function ReviewRegister() {
 
     if (isEdit) {
       fetchReviewDetail();
+    } else {
+      fetchProduct();
     }
-  }, [reviewId]);
+  }, [reviewId, productId]);
+
+  const fetchProduct = async () => {
+    try {
+      const response = await axios.get(`http://localhost:8000/api/products/${productId}`);
+      setProduct(response.data);
+    } catch (error) {
+      console.error('Error fetching product:', error);
+    } finally {
+      setInitialLoading(false);
+    }
+  };
 
   const fetchReviewDetail = async () => {
     try {
@@ -48,6 +87,9 @@ export default function ReviewRegister() {
       } else if (data.image_url) {
         setPreviews([`http://localhost:8000${data.image_url}`]);
       }
+      
+      const prodRes = await axios.get(`http://localhost:8000/api/products/${data.product_id}`);
+      setProduct(prodRes.data);
     } catch (error) {
       console.error('Error fetching review:', error);
       alert('리뷰 정보를 가져오는 데 실패했습니다.');
@@ -76,6 +118,236 @@ export default function ReviewRegister() {
     setPreviews((prev) => prev.filter((_, i) => i !== index));
   };
 
+  // --- CV Functions ---
+  const handleCvImageUpload = (e) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          imgRef.current = img;
+          const MAX_WIDTH = 800;
+          const MAX_HEIGHT = 600;
+          let w = img.width, h = img.height;
+          let scale = 1;
+          
+          if (w > MAX_WIDTH || h > MAX_HEIGHT) {
+            const scaleW = MAX_WIDTH / w;
+            const scaleH = MAX_HEIGHT / h;
+            scale = Math.min(scaleW, scaleH);
+            w = Math.round(w * scale);
+            h = Math.round(h * scale);
+          }
+          setScaleFactor(scale);
+          
+          const canvas = canvasRef.current;
+          if(canvas) {
+            canvas.width = w;
+            canvas.height = h;
+          }
+          
+          setCvImage(img.src);
+          setCvStep(1);
+          setRectShirt(null);
+          setRectA4(null);
+          setShoulderPts([]);
+          setCurrentRect(null);
+          setTimeout(() => redrawCanvas(w, h, scale, null, null, null, []), 50);
+        };
+        img.src = event.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const redrawCanvas = (w, h, scale, rs, ra, cr, sPts = []) => {
+    const canvas = canvasRef.current;
+    if (!canvas || !imgRef.current) return;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(imgRef.current, 0, 0, w, h);
+
+    const drawRect = (r, color, text) => {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 3;
+      ctx.strokeRect(r.x, r.y, r.w, r.h);
+      ctx.font = "bold 16px sans-serif";
+      const textWidth = ctx.measureText(text).width;
+      ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+      ctx.fillRect(r.x, r.y - 25, textWidth + 10, 25);
+      ctx.fillStyle = color;
+      ctx.fillText(text, r.x + 5, r.y - 8);
+    };
+
+    if (rs) drawRect(rs, "#ff4444", "의류 (Shirt)");
+    if (ra) drawRect(ra, "#4CAF50", "A4 용지");
+    
+    if (sPts && sPts.length > 0) {
+      sPts.forEach((pt) => {
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, 6, 0, 2 * Math.PI);
+        ctx.fillStyle = "#ffeb3b";
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = "#000";
+        ctx.stroke();
+      });
+      if (sPts.length === 2) {
+        ctx.beginPath();
+        ctx.moveTo(sPts[0].x, sPts[0].y);
+        ctx.lineTo(sPts[1].x, sPts[1].y);
+        ctx.strokeStyle = "#ffeb3b";
+        ctx.lineWidth = 3;
+        ctx.stroke();
+      }
+    }
+
+    if (cr) {
+      let color = cvStep === 1 ? "#ff4444" : "#4CAF50";
+      ctx.strokeStyle = color;
+      ctx.setLineDash([5, 5]);
+      ctx.lineWidth = 2;
+      ctx.strokeRect(cr.x, cr.y, cr.w, cr.h);
+      ctx.setLineDash([]);
+    }
+  };
+
+  const getPos = (e) => {
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    return {
+      x: (clientX - rect.left) * (canvas.width / rect.width),
+      y: (clientY - rect.top) * (canvas.height / rect.height)
+    };
+  };
+
+  const onDown = (e) => {
+    const pos = getPos(e);
+    const isTopItem = product?.category?.name.includes('상의');
+    if (cvStep === 3 && isTopItem) {
+      const newPts = [...shoulderPts, pos];
+      setShoulderPts(newPts);
+      redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, rectShirt, rectA4, null, newPts);
+      if (newPts.length === 2) {
+        setTimeout(() => setCvStep(4), 300);
+      }
+      return;
+    }
+
+    if (cvStep !== 1 && cvStep !== 2) return;
+    setStartPos(pos);
+    setIsDrawing(true);
+    setCurrentRect({ x: pos.x, y: pos.y, w: 0, h: 0 });
+  };
+
+  const onMove = (e) => {
+    if (!isDrawing) return;
+    const pos = getPos(e);
+    const newRect = {
+      x: Math.min(startPos.x, pos.x),
+      y: Math.min(startPos.y, pos.y),
+      w: Math.abs(pos.x - startPos.x),
+      h: Math.abs(pos.y - startPos.y)
+    };
+    setCurrentRect(newRect);
+    redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, rectShirt, rectA4, newRect, shoulderPts);
+  };
+
+  const onUp = () => {
+    if (!isDrawing) return;
+    setIsDrawing(false);
+    const isTopItem = product?.category?.name.includes('상의');
+    if (currentRect && currentRect.w > 30 && currentRect.h > 30) {
+      if (cvStep === 1) {
+        setRectShirt({ ...currentRect });
+        setCvStep(2);
+        redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, currentRect, rectA4, null, shoulderPts);
+      } else if (cvStep === 2) {
+        setRectA4({ ...currentRect });
+        if (isTopItem) {
+          setCvStep(3);
+          setShoulderPts([]);
+        } else {
+          setCvStep(4);
+        }
+        redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, rectShirt, currentRect, null, shoulderPts);
+      }
+    } else {
+      redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, rectShirt, rectA4, null, shoulderPts);
+    }
+    setCurrentRect(null);
+  };
+
+  const cropToBlob = (rect) => {
+    const temp = document.createElement('canvas');
+    const sx = rect.x / scaleFactor;
+    const sy = rect.y / scaleFactor;
+    const sw = rect.w / scaleFactor;
+    const sh = rect.h / scaleFactor;
+    temp.width = sw; 
+    temp.height = sh;
+    temp.getContext('2d').drawImage(imgRef.current, sx, sy, sw, sh, 0, 0, sw, sh);
+    return new Promise(res => temp.toBlob(res, 'image/jpeg'));
+  };
+
+  const handleAnalyze = async () => {
+    if (!rectShirt || !rectA4) return;
+    setCvLoading(true);
+    
+    try {
+      const shirtBlob = await cropToBlob(rectShirt);
+      const a4Blob = await cropToBlob(rectA4);
+
+      const reqFormData = new FormData();
+      reqFormData.append('shirt_image', shirtBlob, 'shirt.jpg');
+      reqFormData.append('a4_image', a4Blob, 'a4.jpg');
+      reqFormData.append('shirt_x', (rectShirt.x / scaleFactor).toString());
+      reqFormData.append('shirt_y', (rectShirt.y / scaleFactor).toString());
+      reqFormData.append('shirt_w', (rectShirt.w / scaleFactor).toString());
+      reqFormData.append('shirt_h', (rectShirt.h / scaleFactor).toString());
+      reqFormData.append('a4_x', (rectA4.x / scaleFactor).toString());
+      reqFormData.append('a4_y', (rectA4.y / scaleFactor).toString());
+      reqFormData.append('a4_w', (rectA4.w / scaleFactor).toString());
+      reqFormData.append('a4_h', (rectA4.h / scaleFactor).toString());
+      reqFormData.append('orig_w', (canvasRef.current.width / scaleFactor).toString());
+      reqFormData.append('orig_h', (canvasRef.current.height / scaleFactor).toString());
+      
+      const category_type = product?.category?.name.includes('상의') ? 'Top' : 'Bottom';
+      reqFormData.append('category_type', category_type);
+
+      if (category_type === 'Top' && shoulderPts.length === 2) {
+        reqFormData.append('shoulder_x1', (shoulderPts[0].x / scaleFactor).toString());
+        reqFormData.append('shoulder_y1', (shoulderPts[0].y / scaleFactor).toString());
+        reqFormData.append('shoulder_x2', (shoulderPts[1].x / scaleFactor).toString());
+        reqFormData.append('shoulder_y2', (shoulderPts[1].y / scaleFactor).toString());
+      }
+
+      const response = await fetch('http://localhost:8000/api/measure/clothing', {
+        method: 'POST',
+        body: reqFormData,
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setCvResultData(data);
+        setCvStep(5);
+        setMeasurementWarnings(validateMeasurements(data, category_type).warnings);
+      } else {
+        const err = await response.json();
+        setErrorToast({ code: null, detail: err.detail });
+      }
+    } catch (error) {
+      console.error(error);
+      setErrorToast({ code: null, detail: '네트워크 오류가 발생했습니다.' });
+    } finally {
+      setCvLoading(false);
+    }
+  };
+  // --- End CV Functions ---
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (rating === 0) {
@@ -87,30 +359,75 @@ export default function ReviewRegister() {
       return;
     }
 
-    setLoading(true);
-    const formData = new FormData();
-    formData.append('rating', rating);
-    formData.append('comment', comment);
-    formData.append('user_email', userEmail);
-    if (images.length > 0) {
-      images.forEach(img => {
-        formData.append('images', img);
-      });
+    if (includeSizeReview && !isEdit) {
+      if (!selectedSize) {
+        alert('사이즈 실측 후기를 위한 사이즈를 선택해주세요.');
+        return;
+      }
+      if (cvStep !== 5 || !cvResultData) {
+        alert('사이즈 실측 분석을 완료해주세요.');
+        return;
+      }
+      if (measurementWarnings.length > 0) {
+        alert('추출된 치수가 정상 범위를 크게 벗어나 사이즈 후기로 등록할 수 없습니다. 다시 시도해주세요.');
+        return;
+      }
     }
 
+    setLoading(true);
     try {
+      // 1. Submit General Review
+      const formData = new FormData();
+      formData.append('rating', rating);
+      formData.append('comment', comment);
+      formData.append('user_email', userEmail);
+      if (images.length > 0) {
+        images.forEach(img => {
+          formData.append('images', img);
+        });
+      }
+
       if (isEdit) {
         await axios.put(`http://localhost:8000/api/reviews/${reviewId}`, formData, {
           headers: { 'Content-Type': 'multipart/form-data' }
         });
-        alert('리뷰가 수정되었습니다.');
       } else {
         formData.append('product_id', productId);
         await axios.post('http://localhost:8000/api/reviews', formData, {
           headers: { 'Content-Type': 'multipart/form-data' }
         });
-        alert('리뷰가 등록되었습니다.');
       }
+
+      // 2. Submit Size Review
+      if (includeSizeReview && !isEdit && cvResultData) {
+        const isTop = product?.category?.name.includes('상의');
+        const submitData = new FormData();
+        submitData.append('product_id', productId);
+        submitData.append('user_email', userEmail);
+        submitData.append('size_name', selectedSize);
+        
+        submitData.append('length', cvResultData.length_cm);
+        if (isTop) {
+          submitData.append('chest_or_waist', cvResultData.chest_cm);
+          submitData.append('shoulder_or_thigh', cvResultData.shoulder_width_cm || 0);
+          submitData.append('sleeve_or_rise', cvResultData.sleeve_width_cm);
+          submitData.append('sleeve_length', cvResultData.sleeve_length_cm > 0 ? cvResultData.sleeve_length_cm : 0);
+          submitData.append('neck_or_hem', cvResultData.neck_width_cm);
+        } else {
+          submitData.append('chest_or_waist', cvResultData.waist_cm);
+          submitData.append('shoulder_or_thigh', cvResultData.thigh_cm);
+          submitData.append('sleeve_or_rise', cvResultData.rise_cm);
+          submitData.append('neck_or_hem', cvResultData.hem_cm);
+        }
+
+        const debugResp = await fetch(`data:image/jpeg;base64,${cvResultData.debug_image_base64}`);
+        const debugBlob = await debugResp.blob();
+        submitData.append('debug_image', debugBlob, 'result.jpg');
+
+        await axios.post('http://localhost:8000/api/size-reviews', submitData);
+      }
+
+      alert('리뷰가 등록되었습니다.');
       navigate(-1);
     } catch (error) {
       console.error('Error saving review:', error);
@@ -120,10 +437,13 @@ export default function ReviewRegister() {
     }
   };
 
-  if (initialLoading) return <div className="review-register-container">Loading...</div>;
+  if (initialLoading || !product) return <div className="review-register-container">Loading...</div>;
+
+  const isTopItem = product?.category?.name.includes('상의');
+  const availableSizes = isTopItem ? product.top_sizes : product.bottom_sizes;
 
   return (
-    <div className="review-register-container">
+    <div className="review-register-container" style={{ maxWidth: '900px' }}>
       <div className="review-register-header">
         <h1>{isEdit ? '리뷰 수정하기' : '리뷰 작성하기'}</h1>
         <p>상품에 대한 솔직한 의견을 들려주세요!</p>
@@ -167,7 +487,7 @@ export default function ReviewRegister() {
               onClick={() => fileInputRef.current.click()}
             >
               <Camera size={24} />
-              <span>추가</span>
+              <span>사진 추가</span>
             </div>
             
             <div className="previews-list">
@@ -196,6 +516,163 @@ export default function ReviewRegister() {
           </div>
         </div>
 
+        {/* Size Review Section (Only for new reviews) */}
+        {!isEdit && (
+          <div className="form-section size-review-toggle-section" style={{ marginTop: '20px', padding: '20px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+            <div 
+              className="size-review-toggle-header" 
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+              onClick={() => setIncludeSizeReview(!includeSizeReview)}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <input 
+                  type="checkbox" 
+                  checked={includeSizeReview} 
+                  onChange={() => {}} 
+                  style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                />
+                <label className="form-label" style={{ margin: 0, cursor: 'pointer', color: includeSizeReview ? '#4f46e5' : '#475569' }}>
+                  [선택] AI 실측 사이즈 후기 함께 남기기
+                </label>
+              </div>
+              {includeSizeReview ? <ChevronUp size={20} color="#64748b" /> : <ChevronDown size={20} color="#64748b" />}
+            </div>
+
+            {includeSizeReview && (
+              <div className="size-review-content" style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #e2e8f0' }}>
+                <div className="form-group" style={{ marginBottom: '20px' }}>
+                  <label style={{ display: 'block', fontWeight: 600, marginBottom: '10px', color: '#334155' }}>구매하신 사이즈를 선택해주세요</label>
+                  <div className="size-selector" style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                    {availableSizes?.map((s) => (
+                      <button
+                        type="button"
+                        key={s.id}
+                        className={`size-chip ${selectedSize === s.size_name ? 'active' : ''}`}
+                        onClick={() => setSelectedSize(s.size_name)}
+                      >
+                        {s.size_name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="ai-section">
+                  <div className="ai-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <h3 style={{ fontSize: '1rem', fontWeight: 600 }}>AI 치수 추출</h3>
+                    <button type="button" className="guide-btn" onClick={() => setIsGuideOpen(!isGuideOpen)}>{isGuideOpen ? '가이드 닫기' : '? 촬영 가이드'}</button>
+                  </div>
+
+                  {isGuideOpen && (
+                    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.5rem', marginBottom: '1.5rem' }}>
+                      <h4 style={{ margin: '0 0 1rem 0', color: '#334155', fontSize: '0.95rem' }}>📷 이렇게 촬영해주세요</h4>
+                      <ul style={{ margin: 0, paddingLeft: '1.5rem', color: '#475569', fontSize: '0.9rem', lineHeight: '1.6' }}>
+                        <li style={{ marginBottom: '0.5rem' }}><strong>공통:</strong> A4 용지(21×29.7cm)를 옷과 겹치지 않게 옆에 반듯하게 놓고 정면으로 찍어주세요.</li>
+                        {isTopItem ? (
+                          <>
+                            <li style={{ marginBottom: '0.5rem' }}><strong>상의:</strong> 겨드랑이 굴곡이 잘 보이도록 양소매를 살짝 벌려주세요.</li>
+                            <li style={{ marginBottom: '0.5rem' }}><strong>상의:</strong> 목 부분과 밑단이 구겨지지 않게 쫙 펴주세요.</li>
+                          </>
+                        ) : (
+                          <>
+                            <li style={{ marginBottom: '0.5rem' }}><strong>하의:</strong> 사타구니가 명확히 보이도록 두 다리를 겹치지 않게 A자 형태로 벌려주세요.</li>
+                            <li style={{ marginBottom: '0.5rem' }}><strong>하의:</strong> 허리선이 겹치거나 울지 않게 반듯하게 펴주세요.</li>
+                          </>
+                        )}
+                      </ul>
+                      <div style={{ marginTop: '1rem', padding: '0.75rem', background: '#fef2f2', color: '#dc2626', borderRadius: '8px', fontSize: '0.85rem', display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
+                        <span>⚠️</span>
+                        <span>의류가 아닌 사진이나 카테고리와 다른 옷을 업로드하면 측정 결과가 부정확합니다.</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {cvStep === 0 && (
+                    <label htmlFor="sr-upload" className="upload-box" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', width: '100%', border: '2px dashed #cbd5e1', borderRadius: '12px', height: '200px', background: '#fff' }}>
+                      <input type="file" id="sr-upload" style={{ display: 'none' }} accept="image/*" onChange={handleCvImageUpload} />
+                      <Camera size={40} color="#64748b" />
+                      <span style={{ fontWeight: 600, marginTop: '0.5rem', color: '#64748b' }}>의류 실루엣 사진 업로드</span>
+                      <p style={{ fontSize: '0.75rem', marginTop: '0.25rem', color: '#64748b' }}>A4 용지가 함께 나오도록 촬영해주세요</p>
+                    </label>
+                  )}
+
+                  <div className="canvas-wrapper" style={{ display: (cvStep > 0 && cvStep < 5) ? 'flex' : 'none', flexDirection: 'column', alignItems: 'center', gap: '15px' }}>
+                    <div className="canvas-instruction" style={{ background: '#334155', color: 'white', padding: '8px 16px', borderRadius: '20px', fontSize: '0.9rem' }}>
+                      {cvStep === 1 ? "1. 의류 영역을 드래그하세요" : 
+                       cvStep === 2 ? "2. A4 용지 영역을 드래그하세요" : 
+                       cvStep === 3 ? "3. 어깨 재봉선 상단 양끝을 2번 클릭하세요" : ""}
+                    </div>
+                    <canvas
+                      ref={canvasRef}
+                      onMouseDown={onDown}
+                      onMouseMove={onMove}
+                      onMouseUp={onUp}
+                      onTouchStart={onDown}
+                      onTouchMove={onMove}
+                      onTouchEnd={onUp}
+                      style={{ maxWidth: '100%', borderRadius: '8px', background: '#000' }}
+                    />
+                    <div className="canvas-actions" style={{ display: 'flex', gap: '10px', width: '100%' }}>
+                      <button type="button" onClick={() => setCvStep(0)} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
+                        <RefreshCw size={16} /> 다시 업로드
+                      </button>
+                      <button type="button" onClick={() => {
+                        setRectShirt(null);
+                        setRectA4(null);
+                        setShoulderPts([]);
+                        setCvStep(1);
+                        redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, null, null, null, []);
+                      }} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
+                        <RotateCcw size={16} /> 영역 다시 그리기
+                      </button>
+                      {cvStep === 4 && (
+                        <button type="button" onClick={handleAnalyze} disabled={cvLoading} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: '#4f46e5', color: 'white', cursor: 'pointer', fontWeight: 600 }}>
+                          {cvLoading ? '분석 중...' : '분석 시작'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {cvStep === 5 && cvResultData && (
+                    <div className="sr-result-card" style={{ border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden', background: '#fff' }}>
+                      <div className="result-img-box">
+                        <img src={`data:image/jpeg;base64,${cvResultData.debug_image_base64}`} alt="Result" style={{ width: '100%', display: 'block' }} />
+                      </div>
+                      <div className="result-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1px', background: '#e2e8f0' }}>
+                        <div className="res-item" style={{ background: '#fff', padding: '15px' }}><span style={{ fontSize: '0.8rem', color: '#64748b', display: 'block' }}>총장</span><strong style={{ fontSize: '1.1rem' }}>{cvResultData.length_cm}cm</strong></div>
+                        {isTopItem ? (
+                          <>
+                            <div className="res-item" style={{ background: '#fff', padding: '15px' }}><span style={{ fontSize: '0.8rem', color: '#64748b', display: 'block' }}>어깨</span><strong style={{ fontSize: '1.1rem' }}>{cvResultData.shoulder_width_cm}cm</strong></div>
+                            <div className="res-item" style={{ background: '#fff', padding: '15px' }}><span style={{ fontSize: '0.8rem', color: '#64748b', display: 'block' }}>가슴</span><strong style={{ fontSize: '1.1rem' }}>{cvResultData.chest_cm}cm</strong></div>
+                            <div className="res-item" style={{ background: '#fff', padding: '15px' }}><span style={{ fontSize: '0.8rem', color: '#64748b', display: 'block' }}>소매단면</span><strong style={{ fontSize: '1.1rem' }}>{cvResultData.sleeve_width_cm}cm</strong></div>
+                            {cvResultData.sleeve_length_cm > 0 && <div className="res-item" style={{ background: '#fff', padding: '15px' }}><span style={{ fontSize: '0.8rem', color: '#64748b', display: 'block' }}>소매길이</span><strong style={{ fontSize: '1.1rem' }}>{cvResultData.sleeve_length_cm}cm</strong></div>}
+                            <div className="res-item" style={{ background: '#fff', padding: '15px' }}><span style={{ fontSize: '0.8rem', color: '#64748b', display: 'block' }}>목폭</span><strong style={{ fontSize: '1.1rem' }}>{cvResultData.neck_width_cm}cm</strong></div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="res-item" style={{ background: '#fff', padding: '15px' }}><span style={{ fontSize: '0.8rem', color: '#64748b', display: 'block' }}>허리</span><strong style={{ fontSize: '1.1rem' }}>{cvResultData.waist_cm}cm</strong></div>
+                            <div className="res-item" style={{ background: '#fff', padding: '15px' }}><span style={{ fontSize: '0.8rem', color: '#64748b', display: 'block' }}>허벅지</span><strong style={{ fontSize: '1.1rem' }}>{cvResultData.thigh_cm}cm</strong></div>
+                            <div className="res-item" style={{ background: '#fff', padding: '15px' }}><span style={{ fontSize: '0.8rem', color: '#64748b', display: 'block' }}>밑위</span><strong style={{ fontSize: '1.1rem' }}>{cvResultData.rise_cm}cm</strong></div>
+                            <div className="res-item" style={{ background: '#fff', padding: '15px' }}><span style={{ fontSize: '0.8rem', color: '#64748b', display: 'block' }}>밑단</span><strong style={{ fontSize: '1.1rem' }}>{cvResultData.hem_cm}cm</strong></div>
+                          </>
+                        )}
+                      </div>
+                      <button type="button" onClick={() => setCvStep(0)} style={{ width: '100%', padding: '12px', border: 'none', background: '#f1f5f9', color: '#64748b', fontWeight: 500, cursor: 'pointer' }}>
+                        다시 측정하기
+                      </button>
+                      
+                      {measurementWarnings.length > 0 && (
+                        <div style={{ padding: '15px' }}>
+                          <MeasurementWarning warnings={measurementWarnings} />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Actions */}
         <div className="form-actions">
           <button
@@ -208,17 +685,24 @@ export default function ReviewRegister() {
           <button
             type="submit"
             className="btn-submit"
-            disabled={loading}
+            disabled={loading || (includeSizeReview && measurementWarnings.length > 0)}
           >
             {loading ? (
               <Loader2 className="animate-spin" size={20} />
             ) : (
               <Send size={20} />
             )}
-            <span>{isEdit ? '리뷰 수정 완료' : '리뷰 등록 완료'}</span>
+            <span>{isEdit ? '리뷰 수정 완료' : (includeSizeReview ? '리뷰 및 사이즈 후기 등록' : '리뷰 등록 완료')}</span>
           </button>
         </div>
       </form>
+      {errorToast && (
+        <ErrorToast
+          errorCode={null}
+          errorDetail={errorToast.detail}
+          onClose={() => setErrorToast(null)}
+        />
+      )}
     </div>
   );
 }

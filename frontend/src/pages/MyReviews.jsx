@@ -8,6 +8,7 @@ import './MyReviews.css';
 export default function MyReviews() {
   const navigate = useNavigate();
   const [reviews, setReviews] = useState([]);
+  const [sizeReviews, setSizeReviews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const userEmail = sessionStorage.getItem('userEmail');
@@ -20,7 +21,17 @@ export default function MyReviews() {
       return;
     }
     fetchMyReviews();
+    fetchMySizeReviews();
   }, [userEmail]);
+
+  const fetchMySizeReviews = async () => {
+    try {
+      const response = await axios.get(`http://localhost:8000/api/size-reviews/user/${userEmail}`);
+      setSizeReviews(response.data);
+    } catch (error) {
+      console.error('Error fetching size reviews:', error);
+    }
+  };
 
   const fetchMyReviews = async () => {
     try {
@@ -123,6 +134,11 @@ export default function MyReviews() {
                 <div className="product-details">
                   <span className="product-brand">{review.product.brand}</span>
                   <h3 className="product-name">{review.product.name}</h3>
+                  {sizeReviews.some(sr => sr.product_id === review.product.id) && (
+                    <span className="size-review-badge" style={{ display: 'inline-block', marginTop: '4px', padding: '3px 8px', fontSize: '0.75rem', fontWeight: 600, color: '#4f46e5', backgroundColor: '#eef2ff', borderRadius: '4px', border: '1px solid #c7d2fe' }}>
+                      📏 AI 실측 사이즈 포함
+                    </span>
+                  )}
                   <div className="go-product">
                     <span>상품 보기</span>
                     <ExternalLink size={14} />
