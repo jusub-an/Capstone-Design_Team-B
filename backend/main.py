@@ -161,11 +161,15 @@ def read_root():
     return {"message": "Welcome to Backend API"}
 
 # --- 사용자 인증 ---
+import bcrypt
 
 @app.post("/api/register", response_model=schemas.UserResponse)
 def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    # MVP 수준의 구현으로 패스워드 평문 저장 (운영 시 passlib 등으로 해싱 필수)
-    new_user = models.User(username=user.username, email=user.email, password=user.password)
+    # bcrypt를 사용하여 비밀번호 해싱 (최대 72바이트 제한 안전 처리)
+    pwd_bytes = user.password.encode('utf-8')
+    hashed_password = bcrypt.hashpw(pwd_bytes, bcrypt.gensalt()).decode('utf-8')
+    
+    new_user = models.User(username=user.username, email=user.email, password=hashed_password)
     try:
         db.add(new_user)
         db.commit()
@@ -181,8 +185,23 @@ def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
 @app.post("/api/login")
 def login_user(user: schemas.UserLogin, db: Session = Depends(get_db)):
     db_user = db.query(models.User).filter(models.User.email == user.email).first()
-    if not db_user or db_user.password != user.password:
+    
+    if not db_user:
         raise HTTPException(status_code=401, detail="Invalid email or password")
+        
+    is_valid = False
+    if db_user.password.startswith("$2b$") or db_user.password.startswith("$2a$"):
+        try:
+            is_valid = bcrypt.checkpw(user.password.encode('utf-8'), db_user.password.encode('utf-8'))
+        except Exception:
+            pass
+    else:
+        # 기존 평문 비밀번호 호환
+        is_valid = (db_user.password == user.password)
+        
+    if not is_valid:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+        
     return {"username": db_user.username, "email": db_user.email, "access_token": "fake-jwt-token"}
 
 # --- 신체 측정 엔진 관리 ---
