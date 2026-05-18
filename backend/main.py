@@ -841,6 +841,11 @@ def add_to_cart(
     size_name: str = Form(None),
     db: Session = Depends(get_db)
 ):
+    # 상품이 실제로 존재하는지 확인
+    product_exists = db.query(models.Product).filter(models.Product.id == product_id).first()
+    if not product_exists:
+        raise HTTPException(status_code=404, detail="Product not found")
+
     existing = db.query(models.CartItem).filter(
         models.CartItem.user_email == user_email,
         models.CartItem.product_id == product_id,
@@ -857,7 +862,17 @@ def add_to_cart(
 
 @app.get("/api/cart/{user_email}", response_model=list[schemas.CartItemResponse])
 def get_cart(user_email: str, db: Session = Depends(get_db)):
-    return db.query(models.CartItem).filter(models.CartItem.user_email == user_email).all()
+    items = db.query(models.CartItem).filter(models.CartItem.user_email == user_email).all()
+    
+    # 이미 삭제된 상품의 장바구니 항목(Orphaned CartItem)은 DB에서 지우고 결과 목록에서도 제외합니다.
+    orphaned_items = [item for item in items if item.product is None]
+    if orphaned_items:
+        for item in orphaned_items:
+            db.delete(item)
+        db.commit()
+        
+    valid_items = [item for item in items if item.product is not None]
+    return valid_items
 
 
 @app.delete("/api/cart/{item_id}")

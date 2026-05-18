@@ -157,6 +157,6 @@ class CartItemResponse(BaseModel):
     user_email: str
     product_id: int
     size_name: str | None = None
-    product: ProductResponse
+    product: ProductResponse | None = None
     class Config:
         from_attributes = True
