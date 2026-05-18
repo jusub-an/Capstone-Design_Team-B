@@ -809,23 +809,16 @@ function BodyMeasure() {
               <p style={{ margin: '0 0 10px', fontWeight: 600, color: '#444', fontSize: '0.95rem' }}>분석 이미지</p>
 
               {/* 탭 버튼 */}
-              {(() => {
-                const tabs = result.side_debug_image_base64
-                  ? [...TAB_LABELS, { key: 'side_debug', label: '📐 측면 분석' }]
-                  : TAB_LABELS;
-                return (
-                  <div style={{ display: 'flex', gap: '6px', marginBottom: '12px', flexWrap: 'wrap' }}>
-                    {tabs.map(t => (
-                      <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
-                        flex: 1, minWidth: '80px', padding: '8px 0', fontSize: '0.82rem', fontWeight: 600,
-                        borderRadius: '10px', border: 'none', cursor: 'pointer',
-                        background: activeTab === t.key ? 'linear-gradient(135deg, #6e8efb, #a777e3)' : '#f0f0f5',
-                        color: activeTab === t.key ? 'white' : '#666', transition: 'all 0.2s',
-                      }}>{t.label}</button>
-                    ))}
-                  </div>
-                );
-              })()}
+              <div style={{ display: 'flex', gap: '6px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                {TAB_LABELS.map(t => (
+                  <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
+                    flex: 1, minWidth: '80px', padding: '8px 0', fontSize: '0.82rem', fontWeight: 600,
+                    borderRadius: '10px', border: 'none', cursor: 'pointer',
+                    background: activeTab === t.key ? 'linear-gradient(135deg, #6e8efb, #a777e3)' : '#f0f0f5',
+                    color: activeTab === t.key ? 'white' : '#666', transition: 'all 0.2s',
+                  }}>{t.label}</button>
+                ))}
+              </div>
 
               {/* 탭 이미지 */}
               {(() => {
@@ -833,13 +826,18 @@ function BodyMeasure() {
                 if (activeTab === 'debug')
                   return <img src={`data:image/jpeg;base64,${result.debug_image_base64}`} alt="측정 분석" style={imgStyle} />;
                 if (activeTab === 'gray_debug')
-                  return <img src={`data:image/jpeg;base64,${result.gray_debug_image_base64}`} alt="실루엣+측정" style={imgStyle} />;
+                  return (
+                    <div style={{ display: 'flex', gap: '16px', overflowX: 'auto', justifyContent: 'center' }}>
+                      <img src={`data:image/jpeg;base64,${result.gray_debug_image_base64}`} alt="실루엣+측정" style={imgStyle} />
+                      {result.side_debug_image_base64 && (
+                        <img src={`data:image/jpeg;base64,${result.side_debug_image_base64}`} alt="측면 분석" style={imgStyle} />
+                      )}
+                    </div>
+                  );
                 if (activeTab === 'extracted')
                   return <img src={`data:image/jpeg;base64,${result.person_extracted_base64}`} alt="누끼" style={{ ...imgStyle, background: '#f5f5f5' }} />;
                 if (activeTab === 'gray')
                   return <img src={`data:image/jpeg;base64,${result.gray_mask_base64}`} alt="그레이 실루엣" style={imgStyle} />;
-                if (activeTab === 'side_debug' && result.side_debug_image_base64)
-                  return <img src={`data:image/jpeg;base64,${result.side_debug_image_base64}`} alt="측면 분석" style={imgStyle} />;
                 return null;
               })()}
             </div>
