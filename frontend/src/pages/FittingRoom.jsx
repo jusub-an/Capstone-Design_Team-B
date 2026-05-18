@@ -18,25 +18,113 @@ function getHeightRatio(avatar) {
   } catch { return 1; }
 }
 
-// ── compute auto sleeve angle from size measurements (pxPerCm cancels out) ──
-function autoSleeveAngle(sizeInfo) {
-  const gv = (v, d) => (v && v > 0) ? v : d;
-  const shldr  = gv(sizeInfo.shoulder, 45);
-  const chest  = gv(sizeInfo.chest, 50);
-  const slvLen = gv(sizeInfo.sleeve_length, 20);
-  const slvOpn = gv(sizeInfo.sleeve, 16);
-  const dx = (chest - shldr) / 2;
-  const R  = Math.sqrt(slvLen * slvLen + slvOpn * slvOpn);
-  if (R > 0 && Math.abs(dx / R) <= 1) {
-    const deg = (Math.acos(dx / R) - Math.atan2(slvOpn, slvLen)) * 180 / Math.PI;
-    if (!isNaN(deg)) return Math.max(0, Math.min(90, deg)) * Math.PI / 180;
-  }
-  return 65 * Math.PI / 180;
+
+// ── helper for avatar measurements ──
+function getAvatarMeasureObj(avatar, key) {
+  if (!avatar?.measurements) return null;
+  try {
+    const m = typeof avatar.measurements === 'string' ? JSON.parse(avatar.measurements) : avatar.measurements;
+    const arr = Array.isArray(m) ? m : (m?.items ?? []);
+    return arr.find(item => item.key === key)?.value_cm ?? null;
+  } catch(e) { return null; }
 }
 
-// ── standalone clothing polygon renderer (same algorithm as VirtualFitting) ──
-function drawClothingPolygon(ctx, centerX, startY, sizeInfo, pxPerCm, isTop, isSelected) {
+function getLegAngleObj(avatar) {
+  if (avatar && avatar.measurements) {
+    try {
+      const m = typeof avatar.measurements === 'string' ? JSON.parse(avatar.measurements) : avatar.measurements;
+      if (m && m.anchors && m.anchors.leg_angle) return m.anchors.leg_angle;
+      if (m && m.items) {
+        const legItem = m.items.find(i => i.key === 'leg_angle');
+        if (legItem) return legItem.value_cm;
+      }
+    } catch(e) {}
+  }
+  return 0;
+}
+
+function getAutoSleeveAngleObj(avatar, sizeInfo) {
+  if (avatar && avatar.measurements) {
+    try {
+      const m = typeof avatar.measurements === 'string' ? JSON.parse(avatar.measurements) : avatar.measurements;
+      if (m && m.anchors && m.anchors.arm_angle) return m.anchors.arm_angle;
+      if (m && m.items) {
+        const armItem = m.items.find(i => i.key === 'arm_angle');
+        if (armItem) return armItem.value_cm;
+      }
+    } catch(e) {}
+  }
+  if (sizeInfo) {
+    const isShortSleeve = (sizeInfo.sleeve_length || 0) < 30;
+    return isShortSleeve ? 45 : 65;
+  }
+  return 65;
+}
+
+function drawClothingPolygon(ctx, centerX, startY, sizeInfo, pxPerCm, isTop, isSelected, avatar, showDimLines) {
   const getVal = (v, def) => (v && v > 0) ? v : def;
+  const getLabel = (name, val) => (val && val > 0) ? `${name} ${val}cm` : `${name} 정보 없음`;
+  const isMissing = (val) => !(val && val > 0);
+
+  const calcRenderWidth = (clothingFlat, userCirc, userFlat, defaultFlat) => {
+    const flat = getVal(clothingFlat, defaultFlat);
+    if (!userFlat) return flat * pxPerCm;
+    if (userCirc) {
+      const clothingCirc = flat * 2;
+      const ease = clothingCirc - userCirc;
+      if (ease < 0) return userFlat * pxPerCm;
+      else return (userFlat + ease / Math.PI) * pxPerCm;
+    } else {
+      const ease = flat - userFlat;
+      if (ease < 0) return userFlat * pxPerCm;
+      else return (userFlat + ease / 1.5) * pxPerCm;
+    }
+  };
+
+  const drawDimLine = (x1, y1, x2, y2, text, offsetX = 0, offsetY = 0, missing = false) => {
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.strokeStyle = missing ? 'rgba(156, 163, 175, 0.8)' : 'rgba(239, 68, 68, 0.6)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash(missing ? [2, 4] : [4, 4]);
+    ctx.stroke();
+    
+    const angle = Math.atan2(y2 - y1, x2 - x1);
+    const tickLen = 3;
+    ctx.beginPath();
+    ctx.moveTo(x1 - tickLen * Math.sin(angle), y1 + tickLen * Math.cos(angle));
+    ctx.lineTo(x1 + tickLen * Math.sin(angle), y1 - tickLen * Math.cos(angle));
+    ctx.moveTo(x2 - tickLen * Math.sin(angle), y2 + tickLen * Math.cos(angle));
+    ctx.lineTo(x2 + tickLen * Math.sin(angle), y2 - tickLen * Math.cos(angle));
+    ctx.setLineDash([]);
+    ctx.stroke();
+
+    ctx.font = '600 9px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const mx = (x1 + x2) / 2 + offsetX;
+    const my = (y1 + y2) / 2 + offsetY;
+    
+    const textMetrics = ctx.measureText(text);
+    const padding = 6;
+    const bgWidth = textMetrics.width + padding * 2;
+    const bgHeight = 16;
+    
+    ctx.fillStyle = missing ? 'rgba(243, 244, 246, 0.9)' : 'rgba(254, 242, 242, 0.9)';
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(mx - bgWidth/2, my - bgHeight/2, bgWidth, bgHeight, 8);
+    else ctx.rect(mx - bgWidth/2, my - bgHeight/2, bgWidth, bgHeight);
+    ctx.fill();
+    ctx.strokeStyle = missing ? 'rgba(209, 213, 219, 1)' : 'rgba(252, 165, 165, 1)';
+    ctx.stroke();
+    
+    ctx.fillStyle = missing ? '#6b7280' : '#ef4444';
+    ctx.fillText(text, mx, my);
+    ctx.restore();
+  };
+
   ctx.save();
   ctx.strokeStyle = '#6366f1';
   ctx.lineWidth = 2;
@@ -44,62 +132,130 @@ function drawClothingPolygon(ctx, centerX, startY, sizeInfo, pxPerCm, isTop, isS
   ctx.beginPath();
 
   if (isTop) {
-    const neckW    = getVal(sizeInfo.neck, 15)          * pxPerCm;
-    const shldrW   = getVal(sizeInfo.shoulder, 40)      * pxPerCm;
-    const chestW   = getVal(sizeInfo.chest, 50)         * pxPerCm;
-    const totLen   = getVal(sizeInfo.length, 65)        * pxPerCm;
-    const slvLen   = getVal(sizeInfo.sleeve_length, 20) * pxPerCm;
-    const slvOpen  = getVal(sizeInfo.sleeve, 16)        * pxPerCm;
-    const armhole  = 22  * pxPerCm;
-    const shldrDrp = 4   * pxPerCm;
-    const neckDrp  = 4   * pxPerCm;
-    const ang      = autoSleeveAngle(sizeInfo);
+    const neckVal = sizeInfo.neck;
+    const shoulderVal = sizeInfo.shoulder;
+    const chestVal = sizeInfo.chest;
+    const lengthVal = sizeInfo.length;
+    const sleeveVal = sizeInfo.sleeve_length;
+    const sleeveWidthVal = sizeInfo.sleeve;
 
-    ctx.moveTo(centerX - neckW / 2, startY);
-    ctx.quadraticCurveTo(centerX, startY + neckDrp, centerX + neckW / 2, startY);
-    ctx.lineTo(centerX + shldrW / 2, startY + shldrDrp);
-
-    const rx1 = centerX + shldrW / 2 + slvLen * Math.cos(ang);
-    const ry1 = startY + shldrDrp + slvLen * Math.sin(ang);
+    const neckWidth = getVal(neckVal, 15) * pxPerCm;
+    const shoulderWidth = getVal(shoulderVal, 40) * pxPerCm;
+    
+    const chestWidth = calcRenderWidth(chestVal, getAvatarMeasureObj(avatar, 'chest_circumference'), getAvatarMeasureObj(avatar, 'chest'), 50);
+    
+    const totalLength = getVal(lengthVal, 65) * pxPerCm;
+    const sleeveLength = getVal(sleeveVal, 20) * pxPerCm;
+    const armhole = 22 * pxPerCm;
+    const shoulderDrop = 4 * pxPerCm;
+    const neckDrop = 4 * pxPerCm;
+    
+    ctx.moveTo(centerX - neckWidth/2, startY);
+    ctx.quadraticCurveTo(centerX, startY + neckDrop, centerX + neckWidth/2, startY);
+    ctx.lineTo(centerX + shoulderWidth/2, startY + shoulderDrop);
+    
+    const currentSleeveAngle = getAutoSleeveAngleObj(avatar, sizeInfo);
+    const angle = currentSleeveAngle * Math.PI / 180;
+    const rx1 = centerX + shoulderWidth/2 + sleeveLength * Math.cos(angle);
+    const ry1 = startY + shoulderDrop + sleeveLength * Math.sin(angle);
     ctx.lineTo(rx1, ry1);
-    const rx2 = rx1 - slvOpen * Math.sin(ang);
-    const ry2 = ry1 + slvOpen * Math.cos(ang);
+    
+    const sleeveOpening = getVal(sleeveWidthVal, 16) * pxPerCm;
+    const rx2 = rx1 - sleeveOpening * Math.sin(angle);
+    const ry2 = ry1 + sleeveOpening * Math.cos(angle);
     ctx.lineTo(rx2, ry2);
-
-    ctx.quadraticCurveTo(centerX + chestW / 2, startY + armhole - 2 * pxPerCm, centerX + chestW / 2, startY + armhole);
-    ctx.quadraticCurveTo(centerX + chestW / 2 - 1.5 * pxPerCm, startY + armhole + (totLen - armhole) / 2, centerX + chestW / 2, startY + totLen);
-    ctx.quadraticCurveTo(centerX, startY + totLen + 1.5 * pxPerCm, centerX - chestW / 2, startY + totLen);
-    ctx.quadraticCurveTo(centerX - chestW / 2 + 1.5 * pxPerCm, startY + armhole + (totLen - armhole) / 2, centerX - chestW / 2, startY + armhole);
-
-    const lx2 = centerX - shldrW / 2 - slvLen * Math.cos(ang) + slvOpen * Math.sin(ang);
-    const ly2 = startY + shldrDrp + slvLen * Math.sin(ang) + slvOpen * Math.cos(ang);
-    ctx.quadraticCurveTo(centerX - chestW / 2, startY + armhole - 2 * pxPerCm, lx2, ly2);
-    const lx1 = centerX - shldrW / 2 - slvLen * Math.cos(ang);
-    const ly1 = startY + shldrDrp + slvLen * Math.sin(ang);
+    
+    ctx.quadraticCurveTo(centerX + chestWidth/2, startY + armhole - 2*pxPerCm, centerX + chestWidth/2, startY + armhole);
+    ctx.quadraticCurveTo(centerX + chestWidth/2 - 1.5*pxPerCm, startY + armhole + (totalLength - armhole)/2, centerX + chestWidth/2, startY + totalLength);
+    ctx.quadraticCurveTo(centerX, startY + totalLength + 1.5*pxPerCm, centerX - chestWidth/2, startY + totalLength);
+    ctx.quadraticCurveTo(centerX - chestWidth/2 + 1.5*pxPerCm, startY + armhole + (totalLength - armhole)/2, centerX - chestWidth/2, startY + armhole);
+    
+    const lx2 = centerX - shoulderWidth/2 - sleeveLength * Math.cos(angle) + sleeveOpening * Math.sin(angle);
+    const ly2 = startY + shoulderDrop + sleeveLength * Math.sin(angle) + sleeveOpening * Math.cos(angle);
+    ctx.quadraticCurveTo(centerX - chestWidth/2, startY + armhole - 2*pxPerCm, lx2, ly2);
+    
+    const lx1 = centerX - shoulderWidth/2 - sleeveLength * Math.cos(angle);
+    const ly1 = startY + shoulderDrop + sleeveLength * Math.sin(angle);
     ctx.lineTo(lx1, ly1);
-    ctx.lineTo(centerX - shldrW / 2, startY + shldrDrp);
+    ctx.lineTo(centerX - shoulderWidth/2, startY + shoulderDrop);
+    
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    if (showDimLines && isSelected) {
+      drawDimLine(centerX - shoulderWidth/2, startY + shoulderDrop - 8, centerX + shoulderWidth/2, startY + shoulderDrop - 8, getLabel('어깨', shoulderVal), 0, -10, isMissing(shoulderVal));
+      drawDimLine(centerX - chestWidth/2, startY + armhole + 15, centerX + chestWidth/2, startY + armhole + 15, getLabel('가슴', chestVal), 0, 0, isMissing(chestVal));
+      drawDimLine(centerX, startY, centerX, startY + totalLength, getLabel('총장', lengthVal), 36, 0, isMissing(lengthVal));
+      
+      const sx1 = centerX + shoulderWidth/2;
+      const sy1 = startY + shoulderDrop;
+      const sx2 = sx1 + sleeveLength * Math.cos(angle);
+      const sy2 = sy1 + sleeveLength * Math.sin(angle);
+      drawDimLine(sx1, sy1 - 10, sx2, sy2 - 10, getLabel('소매길이', sleeveVal), 0, -12, isMissing(sleeveVal));
+      
+      const sx3 = sx2 - sleeveOpening * Math.sin(angle);
+      const sy3 = sy2 + sleeveOpening * Math.cos(angle);
+      drawDimLine(sx2 + 5, sy2 + 5, sx3 + 5, sy3 + 5, getLabel('소매단면', sleeveWidthVal), 10, 0, isMissing(sleeveWidthVal));
+      drawDimLine(centerX - neckWidth/2, startY - 10, centerX + neckWidth/2, startY - 10, getLabel('목폭', neckVal), 0, -10, isMissing(neckVal));
+    }
   } else {
-    const waistW   = getVal(sizeInfo.waist, 35)  * pxPerCm;
-    const thighW   = getVal(sizeInfo.thigh, 25)  * pxPerCm;
-    const totLen   = getVal(sizeInfo.length, 100) * pxPerCm;
-    const riseLen  = getVal(sizeInfo.rise, 25)   * pxPerCm;
-    const hemW     = getVal(sizeInfo.hem, 20)    * pxPerCm;
+    const waistVal = sizeInfo.waist;
+    const thighVal = sizeInfo.thigh;
+    const lengthVal = sizeInfo.length;
+    const riseVal = sizeInfo.rise;
+    const hemVal = sizeInfo.hem;
 
-    ctx.moveTo(centerX - waistW / 2, startY);
-    ctx.quadraticCurveTo(centerX, startY + 2 * pxPerCm, centerX + waistW / 2, startY);
-    ctx.quadraticCurveTo(centerX + thighW, startY + riseLen / 2, centerX + thighW, startY + riseLen);
-    ctx.lineTo(centerX + thighW / 2 + hemW / 2, startY + totLen);
-    ctx.quadraticCurveTo(centerX + thighW / 2, startY + totLen + 1.5 * pxPerCm, centerX + thighW / 2 - hemW / 2, startY + totLen);
-    ctx.quadraticCurveTo(centerX + 2 * pxPerCm, startY + riseLen, centerX, startY + riseLen);
-    ctx.quadraticCurveTo(centerX - 2 * pxPerCm, startY + riseLen, centerX - thighW / 2 + hemW / 2, startY + totLen);
-    ctx.quadraticCurveTo(centerX - thighW / 2, startY + totLen + 1.5 * pxPerCm, centerX - thighW / 2 - hemW / 2, startY + totLen);
-    ctx.lineTo(centerX - thighW, startY + riseLen);
-    ctx.quadraticCurveTo(centerX - thighW, startY + riseLen / 2, centerX - waistW / 2, startY);
+    const waistWidth = calcRenderWidth(waistVal, getAvatarMeasureObj(avatar, 'waist_circumference'), getAvatarMeasureObj(avatar, 'waist'), 35);
+    const thighWidth = calcRenderWidth(thighVal, getAvatarMeasureObj(avatar, 'thigh_circumference'), getAvatarMeasureObj(avatar, 'thigh'), 25);
+    const totalLength = getVal(lengthVal, 100) * pxPerCm;
+    const riseLength = getVal(riseVal, 25) * pxPerCm;
+    const hemWidth = getVal(hemVal, 20) * pxPerCm;
+
+    ctx.moveTo(centerX - waistWidth/2, startY);
+    ctx.quadraticCurveTo(centerX, startY + 2*pxPerCm, centerX + waistWidth/2, startY);
+    
+    const legAngleRad = getLegAngleObj(avatar) * Math.PI / 180;
+    
+    const rawThighWidth = getVal(thighVal, 25) * pxPerCm;
+    const thighRatio = rawThighWidth > 0 ? (thighWidth / rawThighWidth) : 1;
+    const renderHemWidth = getVal(hemVal, 20) * pxPerCm * Math.max(thighRatio, 0.4);
+
+    const hemOffsetX = (totalLength - riseLength) * Math.sin(legAngleRad);
+    const hemOffsetY = (totalLength - riseLength) * Math.cos(legAngleRad) - (totalLength - riseLength);
+    
+    const rightThighCenterX = centerX + thighWidth/2;
+    const leftThighCenterX = centerX - thighWidth/2;
+    
+    const rightHemOuterX = rightThighCenterX + hemOffsetX + renderHemWidth/2;
+    const rightHemInnerX = rightThighCenterX + hemOffsetX - renderHemWidth/2;
+    const rightHemY = startY + totalLength + hemOffsetY;
+    
+    const leftHemOuterX = leftThighCenterX - hemOffsetX - renderHemWidth/2;
+    const leftHemInnerX = leftThighCenterX - hemOffsetX + renderHemWidth/2;
+    const leftHemY = startY + totalLength + hemOffsetY;
+
+    ctx.quadraticCurveTo(centerX + thighWidth, startY + riseLength/2, centerX + thighWidth, startY + riseLength);
+    ctx.lineTo(rightHemOuterX, rightHemY);
+    ctx.quadraticCurveTo(rightThighCenterX + hemOffsetX, rightHemY + 1.5*pxPerCm, rightHemInnerX, rightHemY);
+    ctx.quadraticCurveTo(centerX + 2*pxPerCm, startY + riseLength, centerX, startY + riseLength);
+    ctx.quadraticCurveTo(centerX - 2*pxPerCm, startY + riseLength, leftHemInnerX, leftHemY);
+    ctx.quadraticCurveTo(leftThighCenterX - hemOffsetX, leftHemY + 1.5*pxPerCm, leftHemOuterX, leftHemY);
+    ctx.lineTo(centerX - thighWidth, startY + riseLength);
+    ctx.quadraticCurveTo(centerX - thighWidth, startY + riseLength/2, centerX - waistWidth/2, startY);
+    
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    if (showDimLines && isSelected) {
+      drawDimLine(centerX - waistWidth/2, startY - 10, centerX + waistWidth/2, startY - 10, getLabel('허리', waistVal), 0, -10, isMissing(waistVal));
+      drawDimLine(centerX, startY + riseLength + 10, centerX + thighWidth, startY + riseLength + 10, getLabel('허벅지', thighVal), 0, 0, isMissing(thighVal));
+      drawDimLine(centerX, startY, centerX, startY + riseLength, getLabel('밑위', riseVal), -36, 0, isMissing(riseVal));
+      drawDimLine(centerX - thighWidth - 15, startY, centerX - thighWidth - 15, startY + totalLength, getLabel('총장', lengthVal), -36, 0, isMissing(lengthVal));
+      drawDimLine(centerX + thighWidth/2 - hemWidth/2, startY + totalLength + 12, centerX + thighWidth/2 + hemWidth/2, startY + totalLength + 12, getLabel('밑단', hemVal), 0, 10, isMissing(hemVal));
+    }
   }
-
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
   ctx.restore();
 }
 
@@ -117,6 +273,7 @@ function FittingRoom() {
   const [avatar, setAvatar] = useState(null);           // {gray_mask_url, person_extracted_url, measurements, height_cm}
   const [avatarMode, setAvatarMode] = useState('gray'); // 'gray' | 'photo'
   const [avatarImg, setAvatarImg] = useState(null);     // loaded Image object
+  const [showDimLines, setShowDimLines] = useState(true);
 
   const [cartItems, setCartItems] = useState([]);
   const [layers, setLayers] = useState([]);
@@ -144,29 +301,50 @@ function FittingRoom() {
   }, [userEmail]);
 
   // ── remove light background from avatar image (both modes saved as JPEG) ──
-  const removeBackground = useCallback((img, isGrayMode) => {
-    const offscreen = document.createElement('canvas');
-    offscreen.width = img.width;
-    offscreen.height = img.height;
-    const ctx = offscreen.getContext('2d');
+  const removeBackground = useCallback((img, isGray) => {
+    const off = document.createElement('canvas');
+    off.width = img.width; off.height = img.height;
+    const ctx = off.getContext('2d');
     ctx.drawImage(img, 0, 0);
-    const imageData = ctx.getImageData(0, 0, offscreen.width, offscreen.height);
-    const d = imageData.data;
-    for (let i = 0; i < d.length; i += 4) {
-      const r = d[i], g = d[i + 1], b = d[i + 2];
-      const brightness = (r + g + b) / 3;
-      // gray_mask: dark silhouette on light-gray bg → remove bright pixels
-      // person_extracted: rembg turns transparent→white when saved as JPEG → remove near-white
-      const threshold = isGrayMode ? 140 : 230;
-      // also check low saturation (gray/white, not colored skin)
-      const maxC = Math.max(r, g, b), minC = Math.min(r, g, b);
-      const saturation = maxC === 0 ? 0 : (maxC - minC) / maxC;
-      if (brightness > threshold || (brightness > 200 && saturation < 0.12)) {
-        d[i + 3] = 0;
+    const d = ctx.getImageData(0, 0, off.width, off.height);
+    const px = d.data;
+    
+    let top = img.height, bottom = 0, left = img.width, right = 0;
+    
+    for (let i = 0; i < px.length; i += 4) {
+      const r = px[i], g = px[i+1], b = px[i+2];
+      const br = (r+g+b)/3;
+      const sat = Math.max(r,g,b) === 0 ? 0 : (Math.max(r,g,b)-Math.min(r,g,b))/Math.max(r,g,b);
+      
+      let isBg = false;
+      if (br > (isGray ? 140 : 230) || (br > 200 && sat < 0.12)) {
+        isBg = true;
+        px[i+3] = 0;
+      }
+      
+      if (!isBg && px[i+3] > 0) {
+        const idx = i / 4;
+        const x = idx % img.width;
+        const y = Math.floor(idx / img.width);
+        if (y < top) top = y;
+        if (y > bottom) bottom = y;
+        if (x < left) left = x;
+        if (x > right) right = x;
       }
     }
-    ctx.putImageData(imageData, 0, 0);
-    return offscreen;
+    ctx.putImageData(d, 0, 0);
+    
+    if (bottom >= top && right >= left) {
+      const cropW = right - left + 1;
+      const cropH = bottom - top + 1;
+      const cropped = document.createElement('canvas');
+      cropped.width = cropW;
+      cropped.height = cropH;
+      cropped.getContext('2d').drawImage(off, left, top, cropW, cropH, 0, 0, cropW, cropH);
+      return cropped;
+    }
+    
+    return off;
   }, []);
 
   // ── load avatar image whenever mode or avatar changes ─────────────
@@ -413,19 +591,11 @@ function FittingRoom() {
           pxPerCm,
           isTop,
           layer.id === selectedLayerId,
+          avatar,
+          showDimLines
         );
 
-        // dashed selection rect around polygon bounding box
-        if (layer.id === selectedLayerId) {
-          const getVal = (v, d) => (v && v > 0) ? v : d;
-          const halfW = getVal(isTop ? layer.sizeInfo.chest : layer.sizeInfo.waist, isTop ? 50 : 35) / 2 * pxPerCm;
-          const totH  = getVal(layer.sizeInfo.length, isTop ? 65 : 100) * pxPerCm;
-          ctx.strokeStyle = '#818cf8';
-          ctx.lineWidth = 1.5;
-          ctx.setLineDash([5, 4]);
-          ctx.strokeRect(layer.x - halfW - 4, layer.y - 4, halfW * 2 + 8, totH + 8);
-          ctx.setLineDash([]);
-        }
+
         return;
       }
 
@@ -434,15 +604,43 @@ function FittingRoom() {
       const imgH = layer.img.height * layer.scale;
       ctx.drawImage(layer.img, layer.x, layer.y, imgW, imgH);
 
-      if (layer.id === selectedLayerId) {
-        ctx.strokeStyle = '#6366f1';
-        ctx.lineWidth = 2;
-        ctx.setLineDash([5, 4]);
-        ctx.strokeRect(layer.x - 2, layer.y - 2, imgW + 4, imgH + 4);
-        ctx.setLineDash([]);
-      }
+
     });
-  }, [avatarImg, layers, selectedLayerId, avatar]);
+
+    // ── 가이드라인 시각화 (Height Visualization) ──
+    if (showDimLines && avatar) {
+      let heightRatioGuide = 1;
+      if (avatar.measurements) {
+        try {
+          const mg = typeof avatar.measurements === 'string' ? JSON.parse(avatar.measurements) : avatar.measurements;
+          if (mg && mg.height_ratio) heightRatioGuide = mg.height_ratio;
+        } catch(e) {}
+      }
+      ctx.save();
+      const guideX = W - 15;
+      ctx.strokeStyle = '#6366f1';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([2, 2]);
+
+      ctx.beginPath(); ctx.moveTo(guideX - 40, OFFSET_Y); ctx.lineTo(guideX, OFFSET_Y); ctx.stroke();
+
+      const heelYg = OFFSET_Y + (DRAW_H / heightRatioGuide);
+      ctx.beginPath(); ctx.moveTo(guideX - 40, heelYg); ctx.lineTo(guideX, heelYg); ctx.stroke();
+
+      ctx.beginPath(); ctx.moveTo(guideX - 40, OFFSET_Y + DRAW_H); ctx.lineTo(guideX, OFFSET_Y + DRAW_H); ctx.stroke();
+
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#6366f1';
+      ctx.font = 'bold 9px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText('정수리 (0cm)', guideX - 45, OFFSET_Y + 3);
+      ctx.fillText(`${avatar.height_cm}cm (발꿈치)`, guideX - 45, heelYg + 3);
+      ctx.fillText('전체 이미지 끝 (발가락)', guideX - 45, OFFSET_Y + DRAW_H + 3);
+
+      ctx.beginPath(); ctx.moveTo(guideX - 5, OFFSET_Y); ctx.lineTo(guideX - 5, OFFSET_Y + DRAW_H); ctx.stroke();
+      ctx.restore();
+    }
+  }, [avatarImg, layers, selectedLayerId, avatar, showDimLines]);
 
   useEffect(() => {
     draw();
@@ -538,6 +736,95 @@ function FittingRoom() {
     return found ? found.value_cm : null;
   };
 
+  const FitVisualizer = ({ label, clothingVal, userCirc, userFlat, canBeCircumference }) => {
+    if (!clothingVal) return null;
+    
+    let ease = 0;
+    let statusText = '';
+    let color = '';
+    let percent = 50;
+    let userDisplay = '';
+    let clothDisplay = '';
+
+    // 사용자 DB에 실제 둘레 데이터가 존재하는 경우에만 '둘레 기반 분석' 진행
+    const useCirc = canBeCircumference && userCirc != null;
+
+    if (useCirc) {
+      // 의류 단면을 2배하여 원단 총 둘레 도출
+      const clothingCirc = clothingVal * 2;
+      ease = clothingCirc - userCirc;
+      
+      // DB 실수 그대로 사용 (어떠한 반올림도 없음)
+      userDisplay = `${userCirc}cm`;
+      clothDisplay = `${clothingCirc}cm`;
+      
+      if (ease < -2) {
+        statusText = `매우 타이트 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#ef4444'; percent = 10;
+      } else if (ease < 4) {
+        statusText = `슬림 핏 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#84cc16'; percent = 30;
+      } else if (ease < 10) {
+        statusText = `레귤러 핏 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#22c55e'; percent = 50;
+      } else if (ease < 18) {
+        statusText = `루즈 핏 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#3b82f6'; percent = 75;
+      } else {
+        statusText = `오버사이즈 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#8b5cf6'; percent = 95;
+      }
+    } else {
+      // 단면/길이 기반 분석
+      if (!userFlat) return null;
+      ease = clothingVal - userFlat;
+      userDisplay = `${userFlat}cm`;
+      clothDisplay = `${clothingVal}cm`;
+
+      if (ease < -2) {
+        statusText = `짧음/타이트 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#ef4444'; percent = 10;
+      } else if (ease < 2) {
+        statusText = `저스트 핏 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#84cc16'; percent = 30;
+      } else if (ease < 6) {
+        statusText = `레귤러 핏 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#22c55e'; percent = 50;
+      } else {
+        statusText = `여유/김 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#3b82f6'; percent = 80;
+      }
+    }
+
+    return (
+      <div style={{ marginBottom: '18px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '8px' }}>
+          <span style={{ fontWeight: 700, color: '#334155' }}>
+            {label}
+          </span>
+          <span style={{ fontWeight: 800, color }}>{statusText}</span>
+        </div>
+        
+        {/* 중앙 기준 핏 게이지 바 */}
+        <div style={{ position: 'relative', height: '6px', background: '#e2e8f0', borderRadius: '3px', margin: '6px 0' }}>
+          <div style={{ position: 'absolute', left: '50%', top: '-4px', bottom: '-4px', width: '2px', background: '#cbd5e1', zIndex: 1 }} />
+          <div style={{ 
+            position: 'absolute', top: 0, bottom: 0, 
+            left: percent < 50 ? `${percent}%` : '50%', 
+            right: percent > 50 ? `${100 - percent}%` : '50%',
+            background: color, borderRadius: '3px', transition: 'all 0.5s cubic-bezier(0.4, 0, 0.2, 1)' 
+          }} />
+          <div style={{
+            position: 'absolute', top: '50%', left: `${percent}%`, transform: 'translate(-50%, -50%)',
+            width: '12px', height: '12px', background: 'white', border: `3.5px solid ${color}`, borderRadius: '50%',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.1)', zIndex: 2, transition: 'left 0.5s cubic-bezier(0.4, 0, 0.2, 1)'
+          }} />
+        </div>
+        
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: '#94a3b8', fontWeight: 600, marginBottom: '6px' }}>
+          <span>타이트</span>
+          <span style={{ marginLeft: '6px' }}>정핏</span>
+          <span>여유로움</span>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: '#64748b', background: '#f8fafc', padding: '6px 8px', borderRadius: '6px', border: '1px solid #f1f5f9' }}>
+          <span>내 신체: <b>{userDisplay}</b></span>
+          <span>옷 치수: <b>{clothDisplay}</b></span>
+        </div>
+      </div>
+    );
+  };
   const renderFitBadge = (userVal, clothingVal) => {
     if (userVal == null || clothingVal == null) return null;
     const diff = userVal - clothingVal;
@@ -746,7 +1033,15 @@ function FittingRoom() {
           {/* Selected layer controls */}
           {selectedLayer && (
             <div style={{ padding: '16px', borderBottom: '1px solid #f1f5f9' }}>
-              <h3 style={{ margin: '0 0 12px', fontSize: '0.95rem', fontWeight: 700, color: '#1e293b' }}>레이어 조절</h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700, color: '#1e293b' }}>레이어 조절</h3>
+                {selectedLayer.isPolygon && (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: '#64748b', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={showDimLines} onChange={e => setShowDimLines(e.target.checked)} />
+                    치수선 표시
+                  </label>
+                )}
+              </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
                 <span style={{ fontSize: '0.82rem', color: '#64748b', minWidth: '40px' }}>크기</span>
                 <button onClick={() => scaleLayer(selectedLayerId, -0.05)} style={{ padding: '4px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', fontWeight: 700 }}>−</button>
@@ -799,18 +1094,12 @@ function FittingRoom() {
                 <h3 style={{ margin: '0 0 12px', fontSize: '0.95rem', fontWeight: 700, color: '#1e293b' }}>핏 분석 ({selectedLayer.size_name})</h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {pairs.map(({ label, clothingKey, avatarKey }) => {
-                    const userVal = getAvatarMeasure(avatarKey);
+                    const userFlat = getAvatarMeasure(avatarKey);
+                    const userCirc = getAvatarMeasure(avatarKey + '_circumference');
                     const clothingVal = sizeInfo[clothingKey];
                     if (clothingVal == null) return null;
-                    return (
-                      <div key={clothingKey} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.82rem' }}>
-                        <span style={{ color: '#64748b', minWidth: '40px' }}>{label}</span>
-                        <span style={{ color: '#334155' }}>
-                          {userVal != null ? `내 ${userVal.toFixed(1)} / 의류 ${clothingVal}` : `의류 ${clothingVal} cm`}
-                        </span>
-                        {renderFitBadge(userVal, clothingVal)}
-                      </div>
-                    );
+                    const canBeCircumference = ['chest', 'waist', 'thigh'].includes(clothingKey);
+                    return <FitVisualizer key={clothingKey} label={label} clothingVal={clothingVal} userCirc={userCirc} userFlat={userFlat} canBeCircumference={canBeCircumference} />;
                   })}
                 </div>
               </div>
