@@ -9,6 +9,14 @@ const DRAW_H = CV_H * 0.9;
 const OFFSET_Y = (CV_H - DRAW_H) / 2 + CV_H * 0.02;
 const FILL_RATIO = 0.78;
 
+// 팔 단면을 타원으로 가정하여 둘레를 추정하는 함수 (깊이를 너비의 약 85%로 가정)
+const estimateArmCircumference = (width) => {
+  if (!width) return null;
+  const a = width / 2;
+  const b = (width * 0.85) / 2; 
+  return parseFloat((2 * Math.PI * Math.sqrt((a * a + b * b) / 2)).toFixed(1));
+};
+
 function VirtualFitting() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -366,8 +374,11 @@ function VirtualFitting() {
         const ry1 = startY + shoulderDrop + sleeveLength * Math.sin(angle);
         ctx.lineTo(rx1, ry1);
         
-        // 소매폭은 그릴 수 없음(팔둘레 정보 없으므로) -> 그냥 의류 단면 정보 사용
-        const sleeveOpening = getVal(sleeveWidthVal, 16) * px_per_cm;
+        // 소매폭을 팔너비(arm_width)를 기반으로 타원 둘레 공식을 적용하여 추정
+        const userArmWidth = getAvatarMeasure('arm_width');
+        const userArmCirc = estimateArmCircumference(userArmWidth);
+        const sleeveOpening = calcRenderWidth(sleeveWidthVal, userArmCirc, userArmWidth, 16);
+        
         const rx2 = rx1 - sleeveOpening * Math.sin(angle);
         const ry2 = ry1 + sleeveOpening * Math.cos(angle);
         ctx.lineTo(rx2, ry2);
@@ -922,8 +933,15 @@ ${productDetailsText}
                         {isTop ? (
                           <>
                             <FitVisualizer label="어깨너비" clothingVal={selectedSize.shoulder} userCirc={null} userFlat={getAvatarMeasure('shoulder')} canBeCircumference={false} />
-                            <FitVisualizer label="상체길이" clothingVal={selectedSize.length} userCirc={null} userFlat={getAvatarMeasure('top_length')} canBeCircumference={false} />
                             <FitVisualizer label="가슴둘레" clothingVal={selectedSize.chest} userCirc={getAvatarMeasure('chest_circumference')} userFlat={null} canBeCircumference={true} />
+                            <FitVisualizer 
+                              label="팔둘레(소매)" 
+                              clothingVal={selectedSize.sleeve} 
+                              userCirc={estimateArmCircumference(getAvatarMeasure('arm_width'))} 
+                              userFlat={getAvatarMeasure('arm_width')} 
+                              canBeCircumference={true} 
+                            />
+                            <FitVisualizer label="상체길이" clothingVal={selectedSize.length} userCirc={null} userFlat={getAvatarMeasure('top_length')} canBeCircumference={false} />
                           </>
                         ) : (
                           <>

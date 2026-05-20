@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, User, Ruler, RefreshCw } from 'lucide-react';
+import { ArrowLeft, User, Ruler, RefreshCw, Heart, ShoppingBag } from 'lucide-react';
+import './ProductList.css';
 
 const BASE = 'http://localhost:8000';
 
@@ -15,15 +16,23 @@ const MEASURE_LABELS = {
   hip_circumference:   { label: '골반 둘레',   unit: 'cm' },
   thigh_circumference: { label: '허벅지 둘레', unit: 'cm' },
   sleeve:              { label: '소매 길이',   unit: 'cm' },
+  arm_width:           { label: '팔 너비',     unit: 'cm' },
   inseam:              { label: '인심',        unit: 'cm' },
   neck:                { label: '목 둘레',     unit: 'cm' },
-  torso_length:        { label: '상체 길이',   unit: 'cm' },
-  leg_length:          { label: '다리 길이',   unit: 'cm' },
+  top_length:          { label: '상체 길이',   unit: 'cm' },
+  bottom_length:       { label: '하반신 길이', unit: 'cm' },
+  rise:                { label: '밑위 길이',   unit: 'cm' },
+  hem:                 { label: '밑단 너비',   unit: 'cm' },
+  arm_angle:           { label: '팔 벌림 각도', unit: '°' },
+  leg_angle:           { label: '다리 벌림 각도', unit: '°' },
 };
 
 function AvatarManage() {
   const navigate = useNavigate();
   const userEmail = sessionStorage.getItem('userEmail');
+  const username = sessionStorage.getItem('username') || 'User';
+  const isLoggedIn = !!sessionStorage.getItem('token');
+  const [cartCount, setCartCount] = useState(0);
 
   const [avatar, setAvatar] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -35,6 +44,14 @@ function AvatarManage() {
       .then(r => r.ok ? r.json() : null)
       .then(data => { setAvatar(data); setLoading(false); })
       .catch(() => setLoading(false));
+  }, [userEmail]);
+
+  useEffect(() => {
+    if (!userEmail) return;
+    fetch(`${BASE}/api/cart/${encodeURIComponent(userEmail)}`)
+      .then(r => r.ok ? r.json() : [])
+      .then(items => setCartCount(items.length))
+      .catch(() => {});
   }, [userEmail]);
 
   const parsedMeasurements = (() => {
@@ -51,25 +68,56 @@ function AvatarManage() {
     ? (imgMode === 'gray' ? avatar.gray_mask_url : avatar.person_extracted_url)
     : null;
 
-  return (
-    <div style={{ minHeight: '100vh', background: '#f1f5f9', fontFamily: "'Inter', system-ui, sans-serif" }}>
-      {/* Header */}
-      <header style={{
-        display: 'flex', alignItems: 'center', gap: '14px',
-        padding: '12px 24px', background: 'white',
-        borderBottom: '1px solid #e2e8f0',
-        boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
-      }}>
-        <button
-          onClick={() => navigate('/mypage')}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', display: 'flex', alignItems: 'center' }}
-        >
-          <ArrowLeft size={22} />
-        </button>
-        <h1 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, color: '#1e293b' }}>아바타 관리</h1>
-      </header>
+  const handleLogout = () => {
+    sessionStorage.removeItem('token');
+    sessionStorage.removeItem('username');
+    sessionStorage.removeItem('userEmail');
+    navigate('/login');
+  };
 
-      <main style={{ maxWidth: '600px', margin: '0 auto', padding: '32px 16px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+  return (
+    <div className="product-list-container" style={{ minHeight: '100vh', background: '#f1f5f9', fontFamily: "'Inter', system-ui, sans-serif" }}>
+      {/* 공통 헤더 */}
+      <header className="product-header">
+        <div className="logo-section" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>
+          <h2>Virtual Fitting</h2>
+        </div>
+
+        <div className="header-actions">
+          <button className="action-icon-btn" onClick={() => navigate('/mypage/wishes')}>
+            <Heart size={22} />
+          </button>
+          <button className="action-icon-btn" onClick={() => navigate('/mypage/fitting')}>
+            <ShoppingBag size={22} />
+            {cartCount > 0 && <span className="badge">{cartCount}</span>}
+          </button>
+
+          {isLoggedIn ? (
+            <div className="user-profile-wrapper">
+              <div className="user-avatar" title="User Profile">
+                {username.charAt(0).toUpperCase()}
+              </div>
+              <div className="dropdown-menu">
+                <ul>
+                  <li onClick={() => navigate('/mypage')}>마이페이지</li>
+                  <li onClick={handleLogout} className="logout-action">로그아웃</li>
+                </ul>
+              </div>
+            </div>
+          ) : (
+            <button className="login-header-button" onClick={() => navigate('/login')}>로그인</button>
+          )}
+        </div>
+      </header>
+      <div style={{ maxWidth: '600px', margin: '0 auto', padding: '32px 16px 0' }}>
+        <h1 style={{ margin: 0, fontSize: '2rem', fontWeight: 800, color: '#1e293b', letterSpacing: '-0.5px' }}>
+          내 아바타
+        </h1>
+        <p style={{ margin: '8px 0 0', color: '#64748b' }}>
+          {avatar ? '저장된 아바타 정보입니다. 재측정을 통해 업데이트할 수 있습니다.' : '신체 측정을 통해 아바타를 생성하고 관리하세요.'}
+        </p>
+      </div>
+      <main style={{ maxWidth: '600px', margin: '0 auto', padding: '20px 16px 32px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
         {loading ? (
           <p style={{ textAlign: 'center', color: '#94a3b8', marginTop: '60px' }}>불러오는 중...</p>
         ) : !avatar ? (
@@ -180,7 +228,7 @@ function AvatarManage() {
               {measurements.length > 0 ? (
                 <div style={{ display: 'grid', gap: '8px' }}>
                   {measurements.map((m, i) => {
-                    const info = MEASURE_LABELS[m.key] || { unit: 'cm' };
+                    const info = MEASURE_LABELS[m.key] || { unit: m.key.includes('angle') ? '°' : 'cm' };
                     const displayLabel = m.label || info.label || m.key;
                     return (
                       <div

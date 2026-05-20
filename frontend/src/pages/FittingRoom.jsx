@@ -1,11 +1,20 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Eye, EyeOff, Trash2, User, Shirt, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, Trash2, User, Shirt, ChevronDown, ChevronUp, RotateCcw, Heart, ShoppingBag } from 'lucide-react';
+import './ProductList.css';
 
 const BASE = 'http://localhost:8000';
 
 const AVATAR_W = 220;
 const AVATAR_H = 550;
+
+// 팔 단면을 타원으로 가정하여 둘레를 추정하는 함수 (깊이를 너비의 약 85%로 가정)
+function estimateArmCircumference(width) {
+  if (!width) return null;
+  const a = width / 2;
+  const b = (width * 0.85) / 2;
+  return parseFloat((2 * Math.PI * Math.sqrt((a * a + b * b) / 2)).toFixed(1));
+}
 
 // ── extract heightRatio from avatar.measurements (new format: {items,height_ratio}) ──
 function getHeightRatio(avatar) {
@@ -160,7 +169,10 @@ function drawClothingPolygon(ctx, centerX, startY, sizeInfo, pxPerCm, isTop, isS
     const ry1 = startY + shoulderDrop + sleeveLength * Math.sin(angle);
     ctx.lineTo(rx1, ry1);
     
-    const sleeveOpening = getVal(sleeveWidthVal, 16) * pxPerCm;
+    const userArmWidth = getAvatarMeasureObj(avatar, 'arm_width');
+    const userArmCirc = estimateArmCircumference(userArmWidth);
+    const sleeveOpening = calcRenderWidth(sleeveWidthVal, userArmCirc, userArmWidth, 16);
+    
     const rx2 = rx1 - sleeveOpening * Math.sin(angle);
     const ry2 = ry1 + sleeveOpening * Math.cos(angle);
     ctx.lineTo(rx2, ry2);
@@ -842,35 +854,49 @@ function FittingRoom() {
 
   const isLoggedIn = !!sessionStorage.getItem('token');
 
+  const username = sessionStorage.getItem('username') || 'User';
+
+  const handleLogout = () => {
+    sessionStorage.removeItem('token');
+    sessionStorage.removeItem('username');
+    sessionStorage.removeItem('userEmail');
+    navigate('/login');
+  };
+
   return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#f1f5f9', fontFamily: "'Inter', system-ui, sans-serif" }}>
-      {/* Header */}
-      <header style={{
-        display: 'flex', alignItems: 'center', gap: '16px',
-        padding: '12px 24px', background: 'white',
-        borderBottom: '1px solid #e2e8f0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
-        flexShrink: 0,
-      }}>
-        <button onClick={() => navigate('/mypage')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', display: 'flex', alignItems: 'center' }}>
-          <ArrowLeft size={22} />
-        </button>
-        <h1 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, color: '#1e293b' }}>가상 피팅룸</h1>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>아바타 모드</span>
-          <button
-            onClick={() => setAvatarMode(m => m === 'gray' ? 'photo' : 'gray')}
-            style={{
-              padding: '6px 14px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 600,
-              border: '1.5px solid #6366f1', cursor: 'pointer',
-              background: avatarMode === 'gray' ? '#eef2ff' : 'linear-gradient(135deg, #6366f1, #a855f7)',
-              color: avatarMode === 'gray' ? '#6366f1' : 'white', transition: 'all 0.2s',
-            }}
-          >
-            {avatarMode === 'gray' ? '🪄 실루엣' : '📷 누끼'}
+    <div className="product-list-container" style={{ height: '100vh', paddingBottom: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', background: '#f1f5f9', fontFamily: "'Inter', system-ui, sans-serif" }}>
+      {/* 공통 헤더 */}
+      <header className="product-header">
+        <div className="logo-section" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>
+          <h2>Virtual Fitting</h2>
+        </div>
+
+        <div className="header-actions">
+          <button className="action-icon-btn" onClick={() => navigate('/mypage/wishes')}>
+            <Heart size={22} />
           </button>
+          <button className="action-icon-btn" onClick={() => navigate('/mypage/fitting')}>
+            <ShoppingBag size={22} />
+            {cartItems.length > 0 && <span className="badge">{cartItems.length}</span>}
+          </button>
+
+          {isLoggedIn ? (
+            <div className="user-profile-wrapper">
+              <div className="user-avatar" title="User Profile">
+                {username.charAt(0).toUpperCase()}
+              </div>
+              <div className="dropdown-menu">
+                <ul>
+                  <li onClick={() => navigate('/mypage')}>마이페이지</li>
+                  <li onClick={handleLogout} className="logout-action">로그아웃</li>
+                </ul>
+              </div>
+            </div>
+          ) : (
+            <button className="login-header-button" onClick={() => navigate('/login')}>로그인</button>
+          )}
         </div>
       </header>
-
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
         {/* Canvas area */}
         <div style={{
@@ -905,6 +931,8 @@ function FittingRoom() {
                   boxShadow: '0 4px 24px rgba(0,0,0,0.08)',
                   cursor: dragging ? 'grabbing' : selectedLayerId ? 'grab' : 'default',
                   maxWidth: '100%',
+                  maxHeight: 'calc(100vh - 160px)',
+                  objectFit: 'contain',
                   touchAction: 'none',
                 }}
                 onMouseDown={onMouseDown}
@@ -983,6 +1011,18 @@ function FittingRoom() {
               </div>
             )}
           </div>
+
+          <button
+            onClick={() => setAvatarMode(m => m === 'gray' ? 'photo' : 'gray')}
+            style={{
+              padding: '6px 14px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 600,
+              border: '1.5px solid #6366f1', cursor: 'pointer',
+              background: avatarMode === 'gray' ? '#eef2ff' : 'linear-gradient(135deg, #6366f1, #a855f7)',
+              color: avatarMode === 'gray' ? '#6366f1' : 'white', transition: 'all 0.2s',
+            }}
+          >
+            {avatarMode === 'gray' ? '🪄 실루엣' : '📷 누끼'}
+          </button>
 
           {/* Active layers */}
           <div style={{ padding: '16px', borderBottom: '1px solid #f1f5f9' }}>
@@ -1080,25 +1120,24 @@ function FittingRoom() {
             const isTop = cartItem.product?.category?.name?.includes('상의');
 
             const pairs = isTop ? [
-              { label: '어깨',     clothingKey: 'shoulder',      avatarKey: 'shoulder' },
-              { label: '가슴',     clothingKey: 'chest',         avatarKey: 'chest' },
-              { label: '소매길이', clothingKey: 'sleeve_length', avatarKey: 'sleeve' },
-              { label: '소매넓이', clothingKey: 'sleeve',        avatarKey: 'arm_width' },
+              { label: '어깨',     clothingKey: 'shoulder',      avatarKey: 'shoulder', userCirc: null },
+              { label: '가슴',     clothingKey: 'chest',         avatarKey: 'chest', userCirc: getAvatarMeasure('chest_circumference') },
+              { label: '소매길이', clothingKey: 'sleeve_length', avatarKey: 'sleeve', userCirc: null },
+              { label: '소매넓이', clothingKey: 'sleeve',        avatarKey: 'arm_width', userCirc: estimateArmCircumference(getAvatarMeasure('arm_width')) },
             ] : [
-              { label: '허리',   clothingKey: 'waist', avatarKey: 'waist' },
-              { label: '허벅지', clothingKey: 'thigh', avatarKey: 'thigh' },
+              { label: '허리',   clothingKey: 'waist', avatarKey: 'waist', userCirc: getAvatarMeasure('waist_circumference') },
+              { label: '허벅지', clothingKey: 'thigh', avatarKey: 'thigh', userCirc: getAvatarMeasure('thigh_circumference') },
             ];
 
             return (
               <div style={{ padding: '16px' }}>
                 <h3 style={{ margin: '0 0 12px', fontSize: '0.95rem', fontWeight: 700, color: '#1e293b' }}>핏 분석 ({selectedLayer.size_name})</h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {pairs.map(({ label, clothingKey, avatarKey }) => {
+                  {pairs.map(({ label, clothingKey, avatarKey, userCirc }) => {
                     const userFlat = getAvatarMeasure(avatarKey);
-                    const userCirc = getAvatarMeasure(avatarKey + '_circumference');
                     const clothingVal = sizeInfo[clothingKey];
                     if (clothingVal == null) return null;
-                    const canBeCircumference = ['chest', 'waist', 'thigh'].includes(clothingKey);
+                    const canBeCircumference = ['chest', 'waist', 'thigh', 'sleeve'].includes(clothingKey);
                     return <FitVisualizer key={clothingKey} label={label} clothingVal={clothingVal} userCirc={userCirc} userFlat={userFlat} canBeCircumference={canBeCircumference} />;
                   })}
                 </div>
