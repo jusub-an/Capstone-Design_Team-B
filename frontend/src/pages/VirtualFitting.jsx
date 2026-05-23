@@ -5,17 +5,15 @@ import './ProductList.css';
 import './VirtualFitting.css';
 
 const BASE = 'http://localhost:8000';
-const CV_W = 300, CV_H = 500;
+const CV_W = 700, CV_H = 600;
 const DRAW_H = CV_H * 0.9;
 const OFFSET_Y = (CV_H - DRAW_H) / 2 + CV_H * 0.02;
 const FILL_RATIO = 0.78;
 
-// 팔 단면을 타원으로 가정하여 둘레를 추정하는 함수 (깊이를 너비의 약 85%로 가정)
+// 팔 단면을 원으로 가정하여 둘레를 구하는 함수 (사용자 요청: 지름 * PI)
 const estimateArmCircumference = (width) => {
   if (!width) return null;
-  const a = width / 2;
-  const b = (width * 0.85) / 2; 
-  return parseFloat((2 * Math.PI * Math.sqrt((a * a + b * b) / 2)).toFixed(1));
+  return parseFloat((width * Math.PI).toFixed(1));
 };
 
 function VirtualFitting() {
@@ -214,10 +212,16 @@ function VirtualFitting() {
   }, [productInfo]);
 
   // 소매 및 다리 각도 자동 계산
-  const getAutoSleeveAngle = useCallback(() => {
+  const getAutoSleeveAngle = useCallback((side = 'right') => {
     if (avatar && avatar.measurements) {
       try {
         const m = typeof avatar.measurements === 'string' ? JSON.parse(avatar.measurements) : avatar.measurements;
+        const key = side === 'left' ? 'left_arm_angle' : 'right_arm_angle';
+        if (m && m.anchors && m.anchors[key]) return m.anchors[key];
+        if (m && m.items) {
+          const armItem = m.items.find(i => i.key === key);
+          if (armItem) return armItem.value_cm;
+        }
         if (m && m.anchors && m.anchors.arm_angle) return m.anchors.arm_angle;
         if (m && m.items) {
           const armItem = m.items.find(i => i.key === 'arm_angle');
@@ -246,7 +250,10 @@ function VirtualFitting() {
     return 0;
   }, [avatar]);
 
-  const currentSleeveAngle = sleeveAngle === 'auto' ? getAutoSleeveAngle() : sleeveAngle;
+  // 화면 우측(Screen Right)은 아바타의 실제 왼팔(Person's Left)
+  const rightSleeveAngle = sleeveAngle === 'auto' ? getAutoSleeveAngle('left') : sleeveAngle;
+  // 화면 좌측(Screen Left)은 아바타의 실제 오른팔(Person's Right)
+  const leftSleeveAngle = sleeveAngle === 'auto' ? getAutoSleeveAngle('right') : sleeveAngle;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -390,17 +397,27 @@ function VirtualFitting() {
         // Right shoulder
         ctx.lineTo(centerX + shoulderWidth/2, startY + shoulderDrop);
         
-        const angle = currentSleeveAngle * Math.PI / 180;
-        const rx1 = centerX + shoulderWidth/2 + sleeveLength * Math.cos(angle);
-        const ry1 = startY + shoulderDrop + sleeveLength * Math.sin(angle);
-        ctx.lineTo(rx1, ry1);
+        const r_angle = rightSleeveAngle * Math.PI / 180;
+        const l_angle = leftSleeveAngle * Math.PI / 180;
         
-        const userArmWidth = getAvatarMeasure('arm_width');
+        const userArmWidth = getAvatarMeasure('arm_width') || 10;
         const userArmCirc = estimateArmCircumference(userArmWidth);
         const sleeveOpening = calcRenderWidth(sleeveWidthVal, userArmCirc, userArmWidth, 16);
+
+        const avatarShoulder = getAvatarMeasure('shoulder') || getAvatarMeasure('shoulder_width') || 40;
+        const A_sx = centerX + (avatarShoulder/2) * px_per_cm;
+        const A_sy = startY + (avatarShoulder * 0.15) * px_per_cm;
+        const armCenterShift = (userArmWidth / 2) * px_per_cm;
         
-        const rx2 = rx1 - sleeveOpening * Math.sin(angle);
-        const ry2 = ry1 + sleeveOpening * Math.cos(angle);
+        const A_center_end_x = A_sx - armCenterShift * Math.sin(r_angle) + sleeveLength * Math.cos(r_angle);
+        const A_center_end_y = A_sy + armCenterShift * Math.cos(r_angle) + sleeveLength * Math.sin(r_angle);
+
+        const rx1 = A_center_end_x + (sleeveOpening/2) * Math.sin(r_angle);
+        const ry1 = A_center_end_y - (sleeveOpening/2) * Math.cos(r_angle);
+        ctx.lineTo(rx1, ry1);
+        
+        const rx2 = A_center_end_x - (sleeveOpening/2) * Math.sin(r_angle);
+        const ry2 = A_center_end_y + (sleeveOpening/2) * Math.cos(r_angle);
         ctx.lineTo(rx2, ry2);
         
         // Armpit curve
@@ -415,14 +432,19 @@ function VirtualFitting() {
         // Left side seam
         ctx.quadraticCurveTo(centerX - chestWidth/2 + 1.5*px_per_cm, startY + armhole + (totalLength - armhole)/2, centerX - chestWidth/2, startY + armhole);
         
-        const lx2 = centerX - shoulderWidth/2 - sleeveLength * Math.cos(angle) + sleeveOpening * Math.sin(angle);
-        const ly2 = startY + shoulderDrop + sleeveLength * Math.sin(angle) + sleeveOpening * Math.cos(angle);
+        const L_A_sx = centerX - (avatarShoulder/2) * px_per_cm;
+        const L_A_sy = startY + (avatarShoulder * 0.15) * px_per_cm;
+        const L_A_center_end_x = L_A_sx + armCenterShift * Math.sin(l_angle) - sleeveLength * Math.cos(l_angle);
+        const L_A_center_end_y = L_A_sy + armCenterShift * Math.cos(l_angle) + sleeveLength * Math.sin(l_angle);
+
+        const lx2 = L_A_center_end_x + (sleeveOpening/2) * Math.sin(l_angle);
+        const ly2 = L_A_center_end_y + (sleeveOpening/2) * Math.cos(l_angle);
         
         // Armpit curve
         ctx.quadraticCurveTo(centerX - chestWidth/2, startY + armhole - 2*px_per_cm, lx2, ly2);
         
-        const lx1 = centerX - shoulderWidth/2 - sleeveLength * Math.cos(angle);
-        const ly1 = startY + shoulderDrop + sleeveLength * Math.sin(angle);
+        const lx1 = L_A_center_end_x - (sleeveOpening/2) * Math.sin(l_angle);
+        const ly1 = L_A_center_end_y - (sleeveOpening/2) * Math.cos(l_angle);
         ctx.lineTo(lx1, ly1);
         
         ctx.lineTo(centerX - shoulderWidth/2, startY + shoulderDrop);
@@ -438,12 +460,12 @@ function VirtualFitting() {
           
           const sx1 = centerX + shoulderWidth/2;
           const sy1 = startY + shoulderDrop;
-          const sx2 = sx1 + sleeveLength * Math.cos(angle);
-          const sy2 = sy1 + sleeveLength * Math.sin(angle);
+          const sx2 = sx1 + sleeveLength * Math.cos(r_angle);
+          const sy2 = sy1 + sleeveLength * Math.sin(r_angle);
           drawDimLine(sx1, sy1 - 10, sx2, sy2 - 10, getLabel('소매길이', sleeveVal), 0, -12, isMissing(sleeveVal));
           
-          const sx3 = sx2 - sleeveOpening * Math.sin(angle);
-          const sy3 = sy2 + sleeveOpening * Math.cos(angle);
+          const sx3 = sx2 - sleeveOpening * Math.sin(r_angle);
+          const sy3 = sy2 + sleeveOpening * Math.cos(r_angle);
           drawDimLine(sx2 + 5, sy2 + 5, sx3 + 5, sy3 + 5, getLabel('소매단면', sleeveWidthVal), 10, 0, isMissing(sleeveWidthVal));
           
           drawDimLine(centerX - neckWidth/2, startY - 10, centerX + neckWidth/2, startY - 10, getLabel('목폭', neckVal), 0, -10, isMissing(neckVal));
@@ -590,20 +612,29 @@ function VirtualFitting() {
     if (useCirc) {
       const clothingCirc = clothingVal * 2;
       ease = clothingCirc - userCirc;
-      
       userDisplay = `${userCirc}cm`;
       clothDisplay = `${clothingCirc}cm`;
-      
-      if (ease < -2) {
-        statusText = `매우 타이트 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#ef4444'; percent = 10;
-      } else if (ease < 4) {
-        statusText = `슬림 핏 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#84cc16'; percent = 30;
-      } else if (ease < 10) {
-        statusText = `레귤러 핏 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#22c55e'; percent = 50;
-      } else if (ease < 18) {
-        statusText = `루즈 핏 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#3b82f6'; percent = 75;
-      } else {
-        statusText = `오버 핏 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#8b5cf6'; percent = 95;
+
+      if (label === '가슴둘레') {
+        if (ease < 2) { statusText = `타이트 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#ef4444'; percent = 10; }
+        else if (ease < 5) { statusText = `슬림핏 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#84cc16'; percent = 30; }
+        else if (ease < 12) { statusText = `정핏 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#22c55e'; percent = 50; }
+        else if (ease < 15) { statusText = `세미 오버핏 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#3b82f6'; percent = 70; }
+        else { statusText = `오버핏 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#8b5cf6'; percent = 90; }
+      } else if (label === '팔둘레(소매)') {
+        if (ease < 2) { statusText = `타이트 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#ef4444'; percent = 10; }
+        else if (ease < 5) { statusText = `슬림핏 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#84cc16'; percent = 30; }
+        else if (ease < 10) { statusText = `정핏 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#22c55e'; percent = 50; }
+        else { statusText = `오버핏 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#8b5cf6'; percent = 90; }
+      } else if (label === '허리둘레') {
+        if (ease < 1) { statusText = `타이트 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#ef4444'; percent = 10; }
+        else if (ease < 3) { statusText = `정핏 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#22c55e'; percent = 50; }
+        else { statusText = `여유로움 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#3b82f6'; percent = 80; }
+      } else if (label === '허벅지둘레') {
+        if (ease < 2) { statusText = `타이트 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#ef4444'; percent = 10; }
+        else if (ease < 4) { statusText = `슬림핏 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#84cc16'; percent = 30; }
+        else if (ease < 10) { statusText = `정핏 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#22c55e'; percent = 50; }
+        else { statusText = `와이드핏 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#8b5cf6'; percent = 90; }
       }
     } else {
       if (!userFlat) return null;
@@ -611,14 +642,17 @@ function VirtualFitting() {
       userDisplay = `${userFlat}cm`;
       clothDisplay = `${clothingVal}cm`;
 
-      if (ease < -2) {
-        statusText = `짧음/타이트 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#ef4444'; percent = 10;
-      } else if (ease < 2) {
-        statusText = `저스트 핏 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#84cc16'; percent = 30;
-      } else if (ease < 6) {
-        statusText = `레귤러 핏 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#22c55e'; percent = 50;
+      if (label === '어깨너비') {
+        if (ease < -1) { statusText = `타이트 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#ef4444'; percent = 10; }
+        else if (ease < 1) { statusText = `슬림핏 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#84cc16'; percent = 30; }
+        else if (ease < 5) { statusText = `정핏 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#22c55e'; percent = 50; }
+        else { statusText = `오버핏/드롭숄더 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#8b5cf6'; percent = 90; }
       } else {
-        statusText = `여유/김 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#3b82f6'; percent = 80;
+        // 상하의 총기장 단면 기준
+        if (ease < 0) { statusText = `짧음/크롭 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#ef4444'; percent = 10; }
+        else if (ease < 3) { statusText = `저스트 기장 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#84cc16'; percent = 30; }
+        else if (ease < 6) { statusText = `레귤러 기장 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#22c55e'; percent = 50; }
+        else { statusText = `여유/김 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#3b82f6'; percent = 80; }
       }
     }
 
@@ -944,6 +978,71 @@ ${productDetailsText}
       </header>
 
       <main className="vf-main-content">
+        <section className="vf-fit-analysis-section">
+          <div className="vf-visual-header">
+            <Sparkles className="vf-icon" />
+            <h3>정밀 핏 분석</h3>
+          </div>
+          <div className="vf-canvas-container" style={{ gap: '20px', background: 'transparent', border: 'none', boxShadow: 'none', padding: 0 }}>
+            {selectedSize && avatar?.measurements ? (
+              <>
+                <div style={{ width: '100%', background: '#ffffff', borderRadius: '14px', padding: '16px', boxShadow: '0 4px 14px rgba(0,0,0,0.03)', border: '1px solid #f1f5f9' }}>
+                  <p style={{ margin: '0 0 12px', fontSize: '0.85rem', fontWeight: 800, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Info size={16} color="#6366f1" /> 핏 가이드 지표
+                  </p>
+                  <div style={{ position: 'relative', height: '8px', borderRadius: '4px', display: 'flex', overflow: 'hidden', marginBottom: '8px' }}>
+                    <div style={{ flex: 1, background: '#ef4444' }} title="타이트" />
+                    <div style={{ flex: 1, background: '#84cc16' }} title="슬림" />
+                    <div style={{ flex: 1, background: '#22c55e' }} title="정핏" />
+                    <div style={{ flex: 1, background: '#3b82f6' }} title="세미오버" />
+                    <div style={{ flex: 1, background: '#8b5cf6' }} title="오버" />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: '#64748b', fontWeight: 600 }}>
+                    <span style={{ width: '20%', textAlign: 'center' }}>타이트</span>
+                    <span style={{ width: '20%', textAlign: 'center' }}>슬림</span>
+                    <span style={{ width: '20%', textAlign: 'center' }}>정핏</span>
+                    <span style={{ width: '20%', textAlign: 'center' }}>세미오버</span>
+                    <span style={{ width: '20%', textAlign: 'center' }}>오버</span>
+                  </div>
+                </div>
+
+                <div style={{ width: '100%', background: '#ffffff', borderRadius: '14px', padding: '16px', boxShadow: '0 4px 14px rgba(0,0,0,0.03)', border: '1px solid #f1f5f9' }}>
+                  <p style={{ margin: '0 0 16px', fontSize: '0.85rem', fontWeight: 800, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Sparkles size={16} color="#6366f1" /> 정밀 핏 분석 ({selectedSize.size_name})
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {isTop ? (
+                      <>
+                        <FitVisualizer label="어깨너비" clothingVal={selectedSize.shoulder} userCirc={null} userFlat={getAvatarMeasure('shoulder')} canBeCircumference={false} />
+                        <FitVisualizer label="가슴둘레" clothingVal={selectedSize.chest} userCirc={getAvatarMeasure('chest_circumference')} userFlat={null} canBeCircumference={true} />
+                        <FitVisualizer 
+                          label="팔둘레(소매)" 
+                          clothingVal={selectedSize.sleeve} 
+                          userCirc={estimateArmCircumference(getAvatarMeasure('arm_width'))} 
+                          userFlat={getAvatarMeasure('arm_width')} 
+                          canBeCircumference={true} 
+                        />
+                        <FitVisualizer label="상체길이" clothingVal={selectedSize.length} userCirc={null} userFlat={getAvatarMeasure('top_length')} canBeCircumference={false} />
+                      </>
+                    ) : (
+                      <>
+                        <FitVisualizer label="허리둘레" clothingVal={selectedSize.waist} userCirc={getAvatarMeasure('waist_circumference')} userFlat={null} canBeCircumference={true} />
+                        <FitVisualizer label="허벅지둘레" clothingVal={selectedSize.thigh} userCirc={getAvatarMeasure('thigh_circumference')} userFlat={null} canBeCircumference={true} />
+                        <FitVisualizer label="하반신길이" clothingVal={selectedSize.length} userCirc={null} userFlat={getAvatarMeasure('bottom_length')} canBeCircumference={false} />
+                      </>
+                    )}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div style={{ textAlign: 'center', color: '#94a3b8', padding: '40px 0', background: '#ffffff', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
+                <Info size={32} style={{ marginBottom: '12px', color: '#cbd5e1' }} />
+                <p style={{ fontSize: '0.85rem', margin: 0 }}>아바타를 로드하고 사이즈를 선택하면<br/>핏 분석 결과가 표시됩니다.</p>
+              </div>
+            )}
+          </div>
+        </section>
+
         <section className="vf-visualization-section">
           <div className="vf-visual-header">
             <Sparkles className="vf-icon" />
@@ -966,117 +1065,61 @@ ${productDetailsText}
                 >신체 측정 하러 가기</button>
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'row', width: '100%', gap: '30px', alignItems: 'flex-start', justifyContent: 'center', flexWrap: 'wrap' }}>
-                
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', height: '100%', overflow: 'hidden' }}>
+                <div style={{ flex: 1, minHeight: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', width: '100%' }}>
                   <canvas
                     ref={canvasRef}
                     width={CV_W}
                     height={CV_H}
-                    style={{ borderRadius: '16px', boxShadow: '0 4px 20px rgba(0,0,0,0.08)', display: 'block', maxWidth: '100%', maxHeight: 'calc(100vh - 260px)', aspectRatio: `${CV_W} / ${CV_H}`, cursor: isDragging ? 'grabbing' : 'grab' }}
+                    style={{ borderRadius: '16px', boxShadow: '0 4px 20px rgba(0,0,0,0.08)', display: 'block', maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', cursor: isDragging ? 'grabbing' : 'grab' }}
                     onMouseDown={handleMouseDown}
                     onMouseMove={handleMouseMove}
                     onMouseUp={handleMouseUpOrLeave}
                     onMouseLeave={handleMouseUpOrLeave}
                     onDoubleClick={handleDoubleClick}
                   />
-                  <p style={{ margin: '6px 0 0', fontSize: '0.72rem', color: '#94a3b8', textAlign: 'center' }}>
-                    의류를 드래그해서 이동할 수 있습니다 (더블클릭 시 복귀)
-                  </p>
+                </div>
+                <p style={{ margin: '6px 0 0', fontSize: '0.72rem', color: '#94a3b8', textAlign: 'center', flexShrink: 0 }}>
+                  의류를 드래그해서 이동할 수 있습니다 (더블클릭 시 복귀)
+                </p>
 
-                  {getSizes().length > 0 && (
-                    <div style={{ width: '100%', marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px', padding: '0 10px', boxSizing: 'border-box' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                        <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>사이즈 선택</p>
-                        <div
-                          onClick={() => setShowDimLines(!showDimLines)}
-                          style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
-                        >
-                          <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600, userSelect: 'none' }}>
-                            치수선 표시
-                          </span>
-                          <div style={{ width: '36px', height: '20px', backgroundColor: showDimLines ? '#6366f1' : '#e2e8f0', borderRadius: '20px', position: 'relative', transition: 'background-color 0.2s ease-in-out', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.1)' }}>
-                            <div style={{
-                              position: 'absolute', top: '2px', left: showDimLines ? '18px' : '2px',
-                              width: '16px', height: '16px', backgroundColor: 'white',
-                              borderRadius: '50%', transition: 'left 0.2s ease-in-out', boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
-                            }} />
-                          </div>
+                {getSizes().length > 0 && (
+                  <div style={{ width: '100%', marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px', padding: '0 10px', boxSizing: 'border-box' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                      <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>사이즈 선택</p>
+                      <div
+                        onClick={() => setShowDimLines(!showDimLines)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+                      >
+                        <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600, userSelect: 'none' }}>
+                          치수선 표시
+                        </span>
+                        <div style={{ width: '36px', height: '20px', backgroundColor: showDimLines ? '#6366f1' : '#e2e8f0', borderRadius: '20px', position: 'relative', transition: 'background-color 0.2s ease-in-out', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.1)' }}>
+                          <div style={{
+                            position: 'absolute', top: '2px', left: showDimLines ? '18px' : '2px',
+                            width: '16px', height: '16px', backgroundColor: 'white',
+                            borderRadius: '50%', transition: 'left 0.2s ease-in-out', boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+                          }} />
                         </div>
                       </div>
-                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-start' }}>
-                        {getSizes().map(s => (
-                          <button
-                            key={s.size_name}
-                            onClick={() => setSelectedSize(s)}
-                            style={{
-                              padding: '6px 16px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 600,
-                              border: `1.5px solid ${selectedSize?.size_name === s.size_name ? '#6366f1' : '#e2e8f0'}`,
-                              background: selectedSize?.size_name === s.size_name ? '#eef2ff' : 'white',
-                              color: selectedSize?.size_name === s.size_name ? '#6366f1' : '#64748b',
-                              cursor: 'pointer', transition: 'all 0.2s'
-                            }}
-                          >{s.size_name}</button>
-                        ))}
-                      </div>
                     </div>
-                  )}
-                </div>
-
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '20px', minWidth: '280px', maxWidth: '340px' }}>
-                  
-                  {selectedSize && avatar?.measurements && (
-                    <div style={{ width: '100%', background: '#ffffff', borderRadius: '14px', padding: '16px', boxShadow: '0 4px 14px rgba(0,0,0,0.03)', border: '1px solid #f1f5f9' }}>
-                      <p style={{ margin: '0 0 12px', fontSize: '0.85rem', fontWeight: 800, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Info size={16} color="#6366f1" /> 핏 가이드 지표
-                      </p>
-                      <div style={{ position: 'relative', height: '8px', borderRadius: '4px', display: 'flex', overflow: 'hidden', marginBottom: '8px' }}>
-                        <div style={{ flex: 1, background: '#ef4444' }} title="타이트" />
-                        <div style={{ flex: 1, background: '#84cc16' }} title="슬림" />
-                        <div style={{ flex: 1, background: '#22c55e' }} title="정핏" />
-                        <div style={{ flex: 1, background: '#3b82f6' }} title="루즈" />
-                        <div style={{ flex: 1, background: '#8b5cf6' }} title="오버" />
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: '#64748b', fontWeight: 600 }}>
-                        <span style={{ width: '20%', textAlign: 'center' }}>타이트</span>
-                        <span style={{ width: '20%', textAlign: 'center' }}>슬림</span>
-                        <span style={{ width: '20%', textAlign: 'center' }}>레귤러</span>
-                        <span style={{ width: '20%', textAlign: 'center' }}>루즈</span>
-                        <span style={{ width: '20%', textAlign: 'center' }}>오버</span>
-                      </div>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                      {getSizes().map(s => (
+                        <button
+                          key={s.size_name}
+                          onClick={() => setSelectedSize(s)}
+                          style={{
+                            padding: '6px 16px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 600,
+                            border: `1.5px solid ${selectedSize?.size_name === s.size_name ? '#6366f1' : '#e2e8f0'}`,
+                            background: selectedSize?.size_name === s.size_name ? '#eef2ff' : 'white',
+                            color: selectedSize?.size_name === s.size_name ? '#6366f1' : '#64748b',
+                            cursor: 'pointer', transition: 'all 0.2s'
+                          }}
+                        >{s.size_name}</button>
+                      ))}
                     </div>
-                  )}
-
-                  {selectedSize && avatar?.measurements && (
-                    <div style={{ width: '100%', background: '#ffffff', borderRadius: '14px', padding: '16px', boxShadow: '0 4px 14px rgba(0,0,0,0.03)', border: '1px solid #f1f5f9' }}>
-                      <p style={{ margin: '0 0 16px', fontSize: '0.85rem', fontWeight: 800, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Sparkles size={16} color="#6366f1" /> 정밀 핏 분석 ({selectedSize.size_name})
-                      </p>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {isTop ? (
-                          <>
-                            <FitVisualizer label="어깨너비" clothingVal={selectedSize.shoulder} userCirc={null} userFlat={getAvatarMeasure('shoulder')} canBeCircumference={false} />
-                            <FitVisualizer label="가슴둘레" clothingVal={selectedSize.chest} userCirc={getAvatarMeasure('chest_circumference')} userFlat={null} canBeCircumference={true} />
-                            <FitVisualizer 
-                              label="팔둘레(소매)" 
-                              clothingVal={selectedSize.sleeve} 
-                              userCirc={estimateArmCircumference(getAvatarMeasure('arm_width'))} 
-                              userFlat={getAvatarMeasure('arm_width')} 
-                              canBeCircumference={true} 
-                            />
-                            <FitVisualizer label="상체길이" clothingVal={selectedSize.length} userCirc={null} userFlat={getAvatarMeasure('top_length')} canBeCircumference={false} />
-                          </>
-                        ) : (
-                          <>
-                            <FitVisualizer label="허리둘레" clothingVal={selectedSize.waist} userCirc={getAvatarMeasure('waist_circumference')} userFlat={null} canBeCircumference={true} />
-                            <FitVisualizer label="허벅지둘레" clothingVal={selectedSize.thigh} userCirc={getAvatarMeasure('thigh_circumference')} userFlat={null} canBeCircumference={true} />
-                            <FitVisualizer label="하반신길이" clothingVal={selectedSize.length} userCirc={null} userFlat={getAvatarMeasure('bottom_length')} canBeCircumference={false} />
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1099,9 +1142,7 @@ ${productDetailsText}
                       <Sparkles size={16} />
                     </div>
                   )}
-                  <div className="vf-message-bubble">
-                    {msg.text}
-                  </div>
+                  <div className="vf-message-bubble">{msg.text}</div>
                 </div>
               ))}
               {isTyping && (

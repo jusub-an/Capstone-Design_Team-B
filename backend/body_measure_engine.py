@@ -126,7 +126,9 @@ class BodyMeasureEngine:
             dy = pt2["y"] - pt1["y"]
             return math.degrees(math.atan2(dx, dy))
 
-        arm_angle = (_calc_angle_from_horizontal(lm11, lm13) + _calc_angle_from_horizontal(lm12, lm14)) / 2
+        left_arm_angle = _calc_angle_from_horizontal(lm11, lm13)
+        right_arm_angle = _calc_angle_from_horizontal(lm12, lm14)
+        arm_angle = (left_arm_angle + right_arm_angle) / 2
         leg_angle = (_calc_angle_from_vertical(lm23, lm25) + _calc_angle_from_vertical(lm24, lm26)) / 2
 
         # 1. 어깨너비
@@ -365,6 +367,16 @@ class BodyMeasureEngine:
                 warnings.append(f"측면 사진 분석 실패: {str(_side_err)[:60]}")
 
         measurements.append({
+            "key": "left_arm_angle", "label": "왼팔 각도",
+            "value_cm": round(left_arm_angle, 1),
+            "width_px": None, "p_start": None, "p_end": None,
+        })
+        measurements.append({
+            "key": "right_arm_angle", "label": "오른팔 각도",
+            "value_cm": round(right_arm_angle, 1),
+            "width_px": None, "p_start": None, "p_end": None,
+        })
+        measurements.append({
             "key": "arm_angle", "label": "팔 벌림 각도",
             "value_cm": round(arm_angle, 1),
             "width_px": None, "p_start": None, "p_end": None,
@@ -393,6 +405,8 @@ class BodyMeasureEngine:
                 "left_armpit":  armpits["left_armpit"],
                 "right_armpit": armpits["right_armpit"],
                 "crotch":       crotch,
+                "left_arm_angle": round(left_arm_angle, 1),
+                "right_arm_angle": round(right_arm_angle, 1),
                 "arm_angle":    round(arm_angle, 1),
                 "leg_angle":    round(leg_angle, 1),
             },

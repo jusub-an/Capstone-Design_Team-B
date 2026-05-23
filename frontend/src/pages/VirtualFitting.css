@@ -82,22 +82,34 @@
 .vf-main-content {
   display: flex;
   flex: 1;
-  gap: 30px;
-  padding: 40px;
-  max-width: 1400px;
+  gap: 24px;
+  padding: 30px 40px;
+  max-width: 1600px;
   margin: 0 auto;
   width: 100%;
   box-sizing: border-box;
   min-height: 0;
 }
 
-/* Left Section: Visualization */
-.vf-visualization-section {
-  flex: 1.2;
+/* Left Section: Fit Analysis */
+.vf-fit-analysis-section {
+  flex: 0.8;
   display: flex;
   flex-direction: column;
   gap: 20px;
   min-height: 0;
+  min-width: 280px;
+  max-width: 340px;
+}
+
+/* Center Section: Visualization */
+.vf-visualization-section {
+  flex: 1.4;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .vf-visual-header {
@@ -125,8 +137,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden; /* Prevent scrollbar, keep it responsive */
   position: relative;
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.03);
   min-height: 0;
@@ -206,6 +217,8 @@
   flex-direction: column;
   gap: 20px;
   min-height: 0;
+  min-width: 300px;
+  max-width: 380px;
 }
 
 .vf-chat-header {
@@ -293,7 +306,7 @@
 .vf-message-wrapper {
   display: flex;
   gap: 12px;
-  max-width: 85%;
+  max-width: 95%;
 }
 
 .vf-message-wrapper.bot {
@@ -436,10 +449,17 @@
   color: #64748b;
 }
 
-@media (max-width: 1024px) {
+@media (max-width: 1200px) {
   .vf-main-content {
     flex-direction: column;
     padding: 20px;
+  }
+  
+  .vf-fit-analysis-section,
+  .vf-visualization-section,
+  .vf-chat-section {
+    max-width: 100%;
+    min-width: unset;
   }
   
   .vf-visualization-section {

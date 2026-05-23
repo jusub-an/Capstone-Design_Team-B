@@ -16,7 +16,7 @@ const MEASURE_LABELS = {
   waist_circumference: { label: '허리 둘레',   unit: 'cm' },
   hip_circumference:   { label: '골반 둘레',   unit: 'cm' },
   thigh_circumference: { label: '허벅지 둘레', unit: 'cm' },
-  sleeve:              { label: '소매 길이',   unit: 'cm' },
+  sleeve:              { label: '팔 길이', unit: 'cm' },
   arm_width:           { label: '팔 너비',     unit: 'cm' },
   inseam:              { label: '인심',        unit: 'cm' },
   neck:                { label: '목 둘레',     unit: 'cm' },
@@ -24,7 +24,8 @@ const MEASURE_LABELS = {
   bottom_length:       { label: '하반신 길이', unit: 'cm' },
   rise:                { label: '밑위 길이',   unit: 'cm' },
   hem:                 { label: '밑단 너비',   unit: 'cm' },
-  arm_angle:           { label: '팔 벌림 각도', unit: '°' },
+  left_arm_angle:      { label: '왼팔 각도', unit: '°' },
+  right_arm_angle:     { label: '오른팔 각도', unit: '°' },
   leg_angle:           { label: '다리 벌림 각도', unit: '°' },
 };
 

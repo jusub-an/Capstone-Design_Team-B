@@ -47,10 +47,16 @@ function getLegAngleObj(avatar) {
   return 0;
 }
 
-function getAutoSleeveAngleObj(avatar, sizeInfo) {
+function getAutoSleeveAngleObj(avatar, sizeInfo, side = 'right') {
   if (avatar && avatar.measurements) {
     try {
       const m = typeof avatar.measurements === 'string' ? JSON.parse(avatar.measurements) : avatar.measurements;
+      const key = side === 'left' ? 'left_arm_angle' : 'right_arm_angle';
+      if (m && m.anchors && m.anchors[key]) return m.anchors[key];
+      if (m && m.items) {
+        const armItem = m.items.find(i => i.key === key);
+        if (armItem) return armItem.value_cm;
+      }
       if (m && m.anchors && m.anchors.arm_angle) return m.anchors.arm_angle;
       if (m && m.items) {
         const armItem = m.items.find(i => i.key === 'arm_angle');
@@ -158,18 +164,31 @@ function drawClothingPolygon(ctx, centerX, startY, sizeInfo, pxPerCm, isTop, isS
     ctx.quadraticCurveTo(centerX, startY + neckDrop, centerX + neckWidth/2, startY);
     ctx.lineTo(centerX + shoulderWidth/2, startY + shoulderDrop);
     
-    const currentSleeveAngle = getAutoSleeveAngleObj(avatar, sizeInfo);
-    const angle = currentSleeveAngle * Math.PI / 180;
-    const rx1 = centerX + shoulderWidth/2 + sleeveLength * Math.cos(angle);
-    const ry1 = startY + shoulderDrop + sleeveLength * Math.sin(angle);
-    ctx.lineTo(rx1, ry1);
-    
-    const userArmWidth = getAvatarMeasureObj(avatar, 'arm_width');
+    // 화면 우측(Screen Right)은 아바타의 실제 왼팔(Person's Left)
+    const rightSleeveAngle = getAutoSleeveAngleObj(avatar, sizeInfo, 'left');
+    // 화면 좌측(Screen Left)은 아바타의 실제 오른팔(Person's Right)
+    const leftSleeveAngle = getAutoSleeveAngleObj(avatar, sizeInfo, 'right');
+    const r_angle = rightSleeveAngle * Math.PI / 180;
+    const l_angle = leftSleeveAngle * Math.PI / 180;
+
+    const userArmWidth = getAvatarMeasureObj(avatar, 'arm_width') || 10;
     const userArmCirc = estimateArmCircumference(userArmWidth);
     const sleeveOpening = calcRenderWidth(sleeveWidthVal, userArmCirc, userArmWidth, 16);
+
+    const avatarShoulder = getAvatarMeasureObj(avatar, 'shoulder') || getAvatarMeasureObj(avatar, 'shoulder_width') || 40;
+    const A_sx = centerX + (avatarShoulder/2) * pxPerCm;
+    const A_sy = startY + (avatarShoulder * 0.15) * pxPerCm;
+    const armCenterShift = (userArmWidth / 2) * pxPerCm;
     
-    const rx2 = rx1 - sleeveOpening * Math.sin(angle);
-    const ry2 = ry1 + sleeveOpening * Math.cos(angle);
+    const A_center_end_x = A_sx - armCenterShift * Math.sin(r_angle) + sleeveLength * Math.cos(r_angle);
+    const A_center_end_y = A_sy + armCenterShift * Math.cos(r_angle) + sleeveLength * Math.sin(r_angle);
+
+    const rx1 = A_center_end_x + (sleeveOpening/2) * Math.sin(r_angle);
+    const ry1 = A_center_end_y - (sleeveOpening/2) * Math.cos(r_angle);
+    ctx.lineTo(rx1, ry1);
+    
+    const rx2 = A_center_end_x - (sleeveOpening/2) * Math.sin(r_angle);
+    const ry2 = A_center_end_y + (sleeveOpening/2) * Math.cos(r_angle);
     ctx.lineTo(rx2, ry2);
     
     ctx.quadraticCurveTo(centerX + chestWidth/2, startY + armhole - 2*pxPerCm, centerX + chestWidth/2, startY + armhole);
@@ -177,12 +196,17 @@ function drawClothingPolygon(ctx, centerX, startY, sizeInfo, pxPerCm, isTop, isS
     ctx.quadraticCurveTo(centerX, startY + totalLength + 1.5*pxPerCm, centerX - chestWidth/2, startY + totalLength);
     ctx.quadraticCurveTo(centerX - chestWidth/2 + 1.5*pxPerCm, startY + armhole + (totalLength - armhole)/2, centerX - chestWidth/2, startY + armhole);
     
-    const lx2 = centerX - shoulderWidth/2 - sleeveLength * Math.cos(angle) + sleeveOpening * Math.sin(angle);
-    const ly2 = startY + shoulderDrop + sleeveLength * Math.sin(angle) + sleeveOpening * Math.cos(angle);
+    const L_A_sx = centerX - (avatarShoulder/2) * pxPerCm;
+    const L_A_sy = startY + (avatarShoulder * 0.15) * pxPerCm;
+    const L_A_center_end_x = L_A_sx + armCenterShift * Math.sin(l_angle) - sleeveLength * Math.cos(l_angle);
+    const L_A_center_end_y = L_A_sy + armCenterShift * Math.cos(l_angle) + sleeveLength * Math.sin(l_angle);
+
+    const lx2 = L_A_center_end_x + (sleeveOpening/2) * Math.sin(l_angle);
+    const ly2 = L_A_center_end_y + (sleeveOpening/2) * Math.cos(l_angle);
     ctx.quadraticCurveTo(centerX - chestWidth/2, startY + armhole - 2*pxPerCm, lx2, ly2);
     
-    const lx1 = centerX - shoulderWidth/2 - sleeveLength * Math.cos(angle);
-    const ly1 = startY + shoulderDrop + sleeveLength * Math.sin(angle);
+    const lx1 = L_A_center_end_x - (sleeveOpening/2) * Math.sin(l_angle);
+    const ly1 = L_A_center_end_y - (sleeveOpening/2) * Math.cos(l_angle);
     ctx.lineTo(lx1, ly1);
     ctx.lineTo(centerX - shoulderWidth/2, startY + shoulderDrop);
     
@@ -197,12 +221,12 @@ function drawClothingPolygon(ctx, centerX, startY, sizeInfo, pxPerCm, isTop, isS
       
       const sx1 = centerX + shoulderWidth/2;
       const sy1 = startY + shoulderDrop;
-      const sx2 = sx1 + sleeveLength * Math.cos(angle);
-      const sy2 = sy1 + sleeveLength * Math.sin(angle);
-      drawDimLine(sx1, sy1 - 10, sx2, sy2 - 10, getLabel('소매길이', sleeveVal), 0, -12, isMissing(sleeveVal));
+      const sx2 = sx1 + sleeveLength * Math.cos(r_angle);
+      const sy2 = sy1 + sleeveLength * Math.sin(r_angle);
+      drawDimLine(sx1, sy1 - 10, sx2, sy2 - 10, getLabel('소매길이', sizeInfo.sleeve_length), 0, -12, isMissing(sizeInfo.sleeve_length));
       
-      const sx3 = sx2 - sleeveOpening * Math.sin(angle);
-      const sy3 = sy2 + sleeveOpening * Math.cos(angle);
+      const sx3 = sx2 - sleeveOpening * Math.sin(r_angle);
+      const sy3 = sy2 + sleeveOpening * Math.cos(r_angle);
       drawDimLine(sx2 + 5, sy2 + 5, sx3 + 5, sy3 + 5, getLabel('소매단면', sleeveWidthVal), 10, 0, isMissing(sleeveWidthVal));
       drawDimLine(centerX - neckWidth/2, startY - 10, centerX + neckWidth/2, startY - 10, getLabel('목폭', neckVal), 0, -10, isMissing(neckVal));
     }
@@ -266,7 +290,7 @@ function drawClothingPolygon(ctx, centerX, startY, sizeInfo, pxPerCm, isTop, isS
   ctx.restore();
 }
 
-const CANVAS_W = 380;
+const CANVAS_W = 700;
 const CANVAS_H = 600;
 const DRAW_H = CANVAS_H * 0.9;       
 const OFFSET_Y = (CANVAS_H - DRAW_H) / 2 + CANVAS_H * 0.02; 
@@ -825,8 +849,8 @@ function FittingRoom() {
             <>
               <canvas
                 ref={canvasRef}
-                width={380}
-                height={600}
+                width={CANVAS_W}
+                height={CANVAS_H}
                 style={{
                   background: 'white',
                   borderRadius: '20px',
