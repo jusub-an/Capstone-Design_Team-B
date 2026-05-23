@@ -204,7 +204,7 @@ function ProductList() {
                         background: 'linear-gradient(135deg, #6366f1, #a855f7)',
                         color: 'white', fontWeight: 700, fontSize: '0.88rem', cursor: 'pointer',
                       }}>
-                      ✨ 가상 피팅룸에서 착용해보기
+                  가상 피팅룸에서 착용해보기
                     </button>
                   </div>
                 </div>

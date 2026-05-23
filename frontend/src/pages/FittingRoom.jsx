@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Eye, EyeOff, Trash2, User, Shirt, ChevronDown, ChevronUp, RotateCcw, Heart, ShoppingBag } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, Trash2, User, Shirt, ChevronDown, ChevronUp, RotateCcw, Heart, ShoppingBag, ShoppingCart, Layers } from 'lucide-react';
 import './ProductList.css';
 
 const BASE = 'http://localhost:8000';
@@ -8,7 +8,6 @@ const BASE = 'http://localhost:8000';
 const AVATAR_W = 220;
 const AVATAR_H = 550;
 
-// 팔 단면을 타원으로 가정하여 둘레를 추정하는 함수 (깊이를 너비의 약 85%로 가정)
 function estimateArmCircumference(width) {
   if (!width) return null;
   const a = width / 2;
@@ -16,7 +15,6 @@ function estimateArmCircumference(width) {
   return parseFloat((2 * Math.PI * Math.sqrt((a * a + b * b) / 2)).toFixed(1));
 }
 
-// ── extract heightRatio from avatar.measurements (new format: {items,height_ratio}) ──
 function getHeightRatio(avatar) {
   if (!avatar?.measurements) return 1;
   try {
@@ -26,9 +24,6 @@ function getHeightRatio(avatar) {
     return (m && m.height_ratio) ? m.height_ratio : 1;
   } catch { return 1; }
 }
-
-
-// ── helper for avatar measurements ──
 function getAvatarMeasureObj(avatar, key) {
   if (!avatar?.measurements) return null;
   try {
@@ -273,9 +268,9 @@ function drawClothingPolygon(ctx, centerX, startY, sizeInfo, pxPerCm, isTop, isS
 
 const CANVAS_W = 380;
 const CANVAS_H = 600;
-const DRAW_H = CANVAS_H * 0.9;       // 540px — avatar draw height
-const OFFSET_Y = (CANVAS_H - DRAW_H) / 2 + CANVAS_H * 0.02; // 42px — avatar top edge
-const FILL_RATIO = 0.78;              // garment occupies ~78 % of product image height
+const DRAW_H = CANVAS_H * 0.9;       
+const OFFSET_Y = (CANVAS_H - DRAW_H) / 2 + CANVAS_H * 0.02; 
+const FILL_RATIO = 0.78;              
 
 function FittingRoom() {
   const navigate = useNavigate();
@@ -283,7 +278,6 @@ function FittingRoom() {
   const userEmail = sessionStorage.getItem('userEmail');
 
   const [avatar, setAvatar] = useState(null);           // {gray_mask_url, person_extracted_url, measurements, height_cm}
-  const [avatarMode, setAvatarMode] = useState('gray'); // 'gray' | 'photo'
   const [avatarImg, setAvatarImg] = useState(null);     // loaded Image object
   const [showDimLines, setShowDimLines] = useState(true);
 
@@ -303,7 +297,6 @@ function FittingRoom() {
   const [loadingCart, setLoadingCart] = useState(true);
   const [preparingLayer, setPreparingLayer] = useState(null); // product_id being prepared
 
-  // ── fetch avatar ──────────────────────────────────────────────────
   useEffect(() => {
     if (!userEmail) { setLoadingAvatar(false); return; }
     fetch(`${BASE}/api/avatar/${encodeURIComponent(userEmail)}`)
@@ -312,7 +305,6 @@ function FittingRoom() {
       .catch(() => setLoadingAvatar(false));
   }, [userEmail]);
 
-  // ── remove light background from avatar image (both modes saved as JPEG) ──
   const removeBackground = useCallback((img, isGray) => {
     const off = document.createElement('canvas');
     off.width = img.width; off.height = img.height;
@@ -359,19 +351,17 @@ function FittingRoom() {
     return off;
   }, []);
 
-  // ── load avatar image whenever mode or avatar changes ─────────────
   useEffect(() => {
     if (!avatar) { setAvatarImg(null); return; }
-    const url = avatarMode === 'gray' ? avatar.gray_mask_url : avatar.person_extracted_url;
+    const url = avatar.gray_mask_url;
     if (!url) { setAvatarImg(null); return; }
     const img = new Image();
     img.crossOrigin = 'anonymous';
-    img.onload = () => setAvatarImg(removeBackground(img, avatarMode === 'gray'));
+    img.onload = () => setAvatarImg(removeBackground(img, true));
     img.onerror = () => setAvatarImg(null);
     img.src = `${BASE}${url}`;
-  }, [avatar, avatarMode, removeBackground]);
+  }, [avatar, removeBackground]);
 
-  // ── fetch cart ────────────────────────────────────────────────────
   useEffect(() => {
     if (!userEmail) { setLoadingCart(false); return; }
     fetch(`${BASE}/api/cart/${encodeURIComponent(userEmail)}`)
@@ -380,21 +370,17 @@ function FittingRoom() {
       .catch(() => setLoadingCart(false));
   }, [userEmail]);
 
-  // ── compute auto-fit position/scale from avatar + clothing measurements ──
   const computeAutoFit = useCallback((img, autoFitParams) => {
     const { height_cm, length_cm, isTop = true } = autoFitParams || {};
     let scale;
 
     if (height_cm && length_cm) {
-      // ideal path: scale so clothing length matches body proportion
       const pxPerCm = DRAW_H / height_cm;
       scale = (length_cm * pxPerCm) / (img.height * FILL_RATIO);
     } else if (height_cm) {
-      // no length data: estimate top ≈ 28 %, bottom ≈ 32 % of body height
       const ratio = isTop ? 0.28 : 0.32;
       scale = (DRAW_H * ratio) / (img.height * FILL_RATIO);
     } else {
-      // no avatar: fit to 55 % of canvas width
       scale = (CANVAS_W * 0.55) / img.width;
     }
 
@@ -406,7 +392,6 @@ function FittingRoom() {
     return { x, y, scale };
   }, []);
 
-  // ── load image for a layer ────────────────────────────────────────
   const loadLayerImage = useCallback((layerId, imgUrl, autoFitParams) => {
     const img = new Image();
     img.onload = () => {
@@ -423,7 +408,6 @@ function FittingRoom() {
     img.src = imgUrl.startsWith('http') ? imgUrl : `${BASE}${imgUrl}`;
   }, [computeAutoFit]);
 
-  // ── add a cart item as layer ──────────────────────────────────────
   const addLayer = async (cartItem) => {
     const already = layers.find(l =>
       l.product_id === cartItem.product_id && l.size_name === cartItem.size_name
@@ -432,12 +416,10 @@ function FittingRoom() {
 
     const p = cartItem.product;
 
-    // build auto-fit params from avatar measurements + clothing size
     const isTop = p?.category?.name?.includes('상의') ?? true;
     const sizes = isTop ? p.top_sizes : p.bottom_sizes;
     const sizeInfo = sizes?.find(s => s.size_name === cartItem.size_name);
 
-    // skip prepare-fitting when polygon mode is available (no image needed)
     const willUsePolygon = !!(sizeInfo && avatar?.height_cm);
     let fittingUrl = p.fitting_image_url;
 
@@ -460,7 +442,6 @@ function FittingRoom() {
       isTop,
     };
 
-    // polygon mode: draw measurement-based avatar when we have sizeInfo + avatar height
     const isPolygon = !!(sizeInfo && avatar?.height_cm);
 
     let initX, initY, initScale;
@@ -468,7 +449,7 @@ function FittingRoom() {
       const heightRatio = getHeightRatio(avatar);
       const pxPerCm = DRAW_H / (avatar.height_cm * heightRatio);
       const headH = avatar.height_cm * 0.135;
-      initX     = CANVAS_W / 2; // centerX
+      initX     = CANVAS_W / 2;
       initY     = isTop
         ? OFFSET_Y + headH * pxPerCm
         : OFFSET_Y + avatar.height_cm * heightRatio * 0.42 * pxPerCm;
@@ -507,18 +488,15 @@ function FittingRoom() {
     }
   };
 
-  // ── remove layer ──────────────────────────────────────────────────
   const removeLayer = (layerId) => {
     setLayers(prev => prev.filter(l => l.id !== layerId));
     if (selectedLayerId === layerId) setSelectedLayerId(null);
   };
 
-  // ── toggle visibility ─────────────────────────────────────────────
   const toggleVisible = (layerId) => {
     setLayers(prev => prev.map(l => l.id === layerId ? { ...l, visible: !l.visible } : l));
   };
 
-  // ── reset layer position ──────────────────────────────────────────
   const resetLayerPosition = (layerId) => {
     setLayers(prev => prev.map(l => {
       if (l.id !== layerId) return l;
@@ -544,7 +522,6 @@ function FittingRoom() {
     }));
   };
 
-  // ── scale selected layer ──────────────────────────────────────────
   const scaleLayer = (layerId, delta) => {
     setLayers(prev => prev.map(l => {
       if (l.id !== layerId) return l;
@@ -554,7 +531,6 @@ function FittingRoom() {
     }));
   };
 
-  // ── draw canvas ───────────────────────────────────────────────────
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -566,7 +542,6 @@ function FittingRoom() {
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, W, H);
 
-    // draw avatar
     if (avatarImg) {
       const aspect = avatarImg.width / avatarImg.height;
       const drawH = H * 0.9;
@@ -575,7 +550,6 @@ function FittingRoom() {
       const offsetY = (H - drawH) / 2 + H * 0.02;
       ctx.drawImage(avatarImg, offsetX, offsetY, drawW, drawH);
     } else {
-      // placeholder silhouette
       ctx.fillStyle = '#e2e8f0';
       const sw = AVATAR_W * 0.55;
       const sh = AVATAR_H * 0.85;
@@ -587,7 +561,6 @@ function FittingRoom() {
       ctx.fillRect(sx + sw * 0.15, sy + 70, sw * 0.7, sh - 70);
     }
 
-    // draw clothing layers (bottom to top)
     layers.forEach(layer => {
       if (!layer.visible) return;
 
@@ -619,7 +592,6 @@ function FittingRoom() {
 
     });
 
-    // ── 가이드라인 시각화 (Height Visualization) ──
     if (showDimLines && avatar) {
       let heightRatioGuide = 1;
       if (avatar.measurements) {
@@ -658,7 +630,6 @@ function FittingRoom() {
     draw();
   }, [draw]);
 
-  // ── hit-test for layer selection ──────────────────────────────────
   const getLayerAtPoint = useCallback((px, py) => {
     for (let i = layers.length - 1; i >= 0; i--) {
       const l = layers[i];
@@ -723,7 +694,6 @@ function FittingRoom() {
 
   const onMouseUp = () => setDragging(false);
 
-  // wheel to scale selected layer
   const onWheel = (e) => {
     e.preventDefault();
     if (!selectedLayerId) return;
@@ -731,126 +701,6 @@ function FittingRoom() {
     scaleLayer(selectedLayerId, delta);
   };
 
-  // ── size info for selected layer ──────────────────────────────────
-  const selectedLayer = layers.find(l => l.id === selectedLayerId);
-
-  const getSizeInfo = (cartItem) => {
-    const p = cartItem?.product;
-    if (!p) return null;
-    const isTop = p?.category?.name?.includes('상의');
-    const sizes = isTop ? p.top_sizes : p.bottom_sizes;
-    return sizes?.find(s => s.size_name === cartItem.size_name) || null;
-  };
-
-  const getAvatarMeasure = (key) => {
-    if (!avatar?.measurements) return null;
-    const found = avatar.measurements.find?.(m => m.key === key);
-    return found ? found.value_cm : null;
-  };
-
-  const FitVisualizer = ({ label, clothingVal, userCirc, userFlat, canBeCircumference }) => {
-    if (!clothingVal) return null;
-    
-    let ease = 0;
-    let statusText = '';
-    let color = '';
-    let percent = 50;
-    let userDisplay = '';
-    let clothDisplay = '';
-
-    // 사용자 DB에 실제 둘레 데이터가 존재하는 경우에만 '둘레 기반 분석' 진행
-    const useCirc = canBeCircumference && userCirc != null;
-
-    if (useCirc) {
-      // 의류 단면을 2배하여 원단 총 둘레 도출
-      const clothingCirc = clothingVal * 2;
-      ease = clothingCirc - userCirc;
-      
-      // DB 실수 그대로 사용 (어떠한 반올림도 없음)
-      userDisplay = `${userCirc}cm`;
-      clothDisplay = `${clothingCirc}cm`;
-      
-      if (ease < -2) {
-        statusText = `매우 타이트 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#ef4444'; percent = 10;
-      } else if (ease < 4) {
-        statusText = `슬림 핏 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#84cc16'; percent = 30;
-      } else if (ease < 10) {
-        statusText = `레귤러 핏 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#22c55e'; percent = 50;
-      } else if (ease < 18) {
-        statusText = `루즈 핏 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#3b82f6'; percent = 75;
-      } else {
-        statusText = `오버사이즈 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#8b5cf6'; percent = 95;
-      }
-    } else {
-      // 단면/길이 기반 분석
-      if (!userFlat) return null;
-      ease = clothingVal - userFlat;
-      userDisplay = `${userFlat}cm`;
-      clothDisplay = `${clothingVal}cm`;
-
-      if (ease < -2) {
-        statusText = `짧음/타이트 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#ef4444'; percent = 10;
-      } else if (ease < 2) {
-        statusText = `저스트 핏 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#84cc16'; percent = 30;
-      } else if (ease < 6) {
-        statusText = `레귤러 핏 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#22c55e'; percent = 50;
-      } else {
-        statusText = `여유/김 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#3b82f6'; percent = 80;
-      }
-    }
-
-    return (
-      <div style={{ marginBottom: '18px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '8px' }}>
-          <span style={{ fontWeight: 700, color: '#334155' }}>
-            {label}
-          </span>
-          <span style={{ fontWeight: 800, color }}>{statusText}</span>
-        </div>
-        
-        {/* 중앙 기준 핏 게이지 바 */}
-        <div style={{ position: 'relative', height: '6px', background: '#e2e8f0', borderRadius: '3px', margin: '6px 0' }}>
-          <div style={{ position: 'absolute', left: '50%', top: '-4px', bottom: '-4px', width: '2px', background: '#cbd5e1', zIndex: 1 }} />
-          <div style={{ 
-            position: 'absolute', top: 0, bottom: 0, 
-            left: percent < 50 ? `${percent}%` : '50%', 
-            right: percent > 50 ? `${100 - percent}%` : '50%',
-            background: color, borderRadius: '3px', transition: 'all 0.5s cubic-bezier(0.4, 0, 0.2, 1)' 
-          }} />
-          <div style={{
-            position: 'absolute', top: '50%', left: `${percent}%`, transform: 'translate(-50%, -50%)',
-            width: '12px', height: '12px', background: 'white', border: `3.5px solid ${color}`, borderRadius: '50%',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.1)', zIndex: 2, transition: 'left 0.5s cubic-bezier(0.4, 0, 0.2, 1)'
-          }} />
-        </div>
-        
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: '#94a3b8', fontWeight: 600, marginBottom: '6px' }}>
-          <span>타이트</span>
-          <span style={{ marginLeft: '6px' }}>정핏</span>
-          <span>여유로움</span>
-        </div>
-
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: '#64748b', background: '#f8fafc', padding: '6px 8px', borderRadius: '6px', border: '1px solid #f1f5f9' }}>
-          <span>내 신체: <b>{userDisplay}</b></span>
-          <span>옷 치수: <b>{clothDisplay}</b></span>
-        </div>
-      </div>
-    );
-  };
-  const renderFitBadge = (userVal, clothingVal) => {
-    if (userVal == null || clothingVal == null) return null;
-    const diff = userVal - clothingVal;
-    let label, color;
-    if (diff > 3) { label = '타이트'; color = '#ef4444'; }
-    else if (diff < -5) { label = '루즈'; color = '#f59e0b'; }
-    else { label = '적정'; color = '#22c55e'; }
-    return (
-      <span style={{
-        fontSize: '0.72rem', fontWeight: 700, padding: '2px 8px', borderRadius: '20px',
-        background: color + '20', color, border: `1px solid ${color}40`,
-      }}>{label} ({diff >= 0 ? '+' : ''}{diff.toFixed(1)})</span>
-    );
-  };
 
   const isLoggedIn = !!sessionStorage.getItem('token');
 
@@ -962,7 +812,7 @@ function FittingRoom() {
           {/* Cart items */}
           <div style={{ padding: '16px', borderBottom: '1px solid #f1f5f9' }}>
             <h3 style={{ margin: '0 0 12px', fontSize: '0.95rem', fontWeight: 700, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Shirt size={16} color="#6366f1" /> 장바구니 상품
+              <ShoppingCart size={16} color="#6366f1" /> 장바구니 상품
             </h3>
             {loadingCart ? (
               <p style={{ color: '#94a3b8', fontSize: '0.85rem' }}>불러오는 중...</p>
@@ -1012,21 +862,30 @@ function FittingRoom() {
             )}
           </div>
 
-          <button
-            onClick={() => setAvatarMode(m => m === 'gray' ? 'photo' : 'gray')}
-            style={{
-              padding: '6px 14px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 600,
-              border: '1.5px solid #6366f1', cursor: 'pointer',
-              background: avatarMode === 'gray' ? '#eef2ff' : 'linear-gradient(135deg, #6366f1, #a855f7)',
-              color: avatarMode === 'gray' ? '#6366f1' : 'white', transition: 'all 0.2s',
-            }}
-          >
-            {avatarMode === 'gray' ? '🪄 실루엣' : '📷 누끼'}
-          </button>
-
           {/* Active layers */}
           <div style={{ padding: '16px', borderBottom: '1px solid #f1f5f9' }}>
-            <h3 style={{ margin: '0 0 12px', fontSize: '0.95rem', fontWeight: 700, color: '#1e293b' }}>레이어</h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Layers size={16} color="#6366f1" /> 레이어
+              </h3>
+              {layers.some(l => l.isPolygon) && (
+                <div
+                  onClick={() => setShowDimLines(!showDimLines)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+                >
+                  <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600, userSelect: 'none' }}>
+                    치수선 표시
+                  </span>
+                  <div style={{ width: '36px', height: '20px', backgroundColor: showDimLines ? '#6366f1' : '#e2e8f0', borderRadius: '20px', position: 'relative', transition: 'background-color 0.2s ease-in-out', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.1)' }}>
+                    <div style={{
+                      position: 'absolute', top: '2px', left: showDimLines ? '18px' : '2px',
+                      width: '16px', height: '16px', backgroundColor: 'white',
+                      borderRadius: '50%', transition: 'left 0.2s ease-in-out', boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+                    }} />
+                  </div>
+                </div>
+              )}
+            </div>
             {layers.length === 0 ? (
               <p style={{ color: '#94a3b8', fontSize: '0.85rem' }}>위에서 상품을 착용해 보세요</p>
             ) : (
@@ -1054,14 +913,8 @@ function FittingRoom() {
                       {layer.size_name && <span style={{ fontSize: '0.7rem', color: '#6366f1' }}>{layer.size_name}</span>}
                     </div>
                     <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
-                      <button onClick={e => { e.stopPropagation(); toggleVisible(layer.id); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', padding: '2px' }}>
-                        {layer.visible ? <Eye size={14} /> : <EyeOff size={14} />}
-                      </button>
-                      <button onClick={e => { e.stopPropagation(); resetLayerPosition(layer.id); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', padding: '2px' }}>
-                        <RotateCcw size={13} />
-                      </button>
-                      <button onClick={e => { e.stopPropagation(); removeLayer(layer.id); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '2px' }}>
-                        <Trash2 size={14} />
+                      <button onClick={e => { e.stopPropagation(); resetLayerPosition(layer.id); }} style={{ background: 'white', border: '1px solid #cbd5e1', borderRadius: '6px', cursor: 'pointer', color: '#475569', padding: '4px 8px', fontSize: '0.7rem', fontWeight: 600 }}>
+                        위치 초기화
                       </button>
                     </div>
                   </div>
@@ -1069,81 +922,6 @@ function FittingRoom() {
               </div>
             )}
           </div>
-
-          {/* Selected layer controls */}
-          {selectedLayer && (
-            <div style={{ padding: '16px', borderBottom: '1px solid #f1f5f9' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700, color: '#1e293b' }}>레이어 조절</h3>
-                {selectedLayer.isPolygon && (
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: '#64748b', cursor: 'pointer' }}>
-                    <input type="checkbox" checked={showDimLines} onChange={e => setShowDimLines(e.target.checked)} />
-                    치수선 표시
-                  </label>
-                )}
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                <span style={{ fontSize: '0.82rem', color: '#64748b', minWidth: '40px' }}>크기</span>
-                <button onClick={() => scaleLayer(selectedLayerId, -0.05)} style={{ padding: '4px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', fontWeight: 700 }}>−</button>
-                <span style={{ fontSize: '0.82rem', fontWeight: 600, minWidth: '40px', textAlign: 'center' }}>{(selectedLayer.scale * 100).toFixed(0)}%</span>
-                <button onClick={() => scaleLayer(selectedLayerId, 0.05)} style={{ padding: '4px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', fontWeight: 700 }}>+</button>
-              </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button onClick={() => setLayers(prev => {
-                  const idx = prev.findIndex(l => l.id === selectedLayerId);
-                  if (idx <= 0) return prev;
-                  const arr = [...prev];
-                  [arr[idx - 1], arr[idx]] = [arr[idx], arr[idx - 1]];
-                  return arr;
-                })} style={{ flex: 1, padding: '6px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
-                  <ChevronDown size={12} /> 앞으로
-                </button>
-                <button onClick={() => setLayers(prev => {
-                  const idx = prev.findIndex(l => l.id === selectedLayerId);
-                  if (idx >= prev.length - 1) return prev;
-                  const arr = [...prev];
-                  [arr[idx], arr[idx + 1]] = [arr[idx + 1], arr[idx]];
-                  return arr;
-                })} style={{ flex: 1, padding: '6px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
-                  <ChevronUp size={12} /> 뒤로
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Fit info for selected layer */}
-          {selectedLayer && avatar?.measurements && (() => {
-            const cartItem = cartItems.find(c => c.product_id === selectedLayer.product_id && c.size_name === selectedLayer.size_name);
-            if (!cartItem) return null;
-            const sizeInfo = getSizeInfo(cartItem);
-            if (!sizeInfo) return null;
-            const isTop = cartItem.product?.category?.name?.includes('상의');
-
-            const pairs = isTop ? [
-              { label: '어깨',     clothingKey: 'shoulder',      avatarKey: 'shoulder', userCirc: null },
-              { label: '가슴',     clothingKey: 'chest',         avatarKey: 'chest', userCirc: getAvatarMeasure('chest_circumference') },
-              { label: '소매길이', clothingKey: 'sleeve_length', avatarKey: 'sleeve', userCirc: null },
-              { label: '소매넓이', clothingKey: 'sleeve',        avatarKey: 'arm_width', userCirc: estimateArmCircumference(getAvatarMeasure('arm_width')) },
-            ] : [
-              { label: '허리',   clothingKey: 'waist', avatarKey: 'waist', userCirc: getAvatarMeasure('waist_circumference') },
-              { label: '허벅지', clothingKey: 'thigh', avatarKey: 'thigh', userCirc: getAvatarMeasure('thigh_circumference') },
-            ];
-
-            return (
-              <div style={{ padding: '16px' }}>
-                <h3 style={{ margin: '0 0 12px', fontSize: '0.95rem', fontWeight: 700, color: '#1e293b' }}>핏 분석 ({selectedLayer.size_name})</h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {pairs.map(({ label, clothingKey, avatarKey, userCirc }) => {
-                    const userFlat = getAvatarMeasure(avatarKey);
-                    const clothingVal = sizeInfo[clothingKey];
-                    if (clothingVal == null) return null;
-                    const canBeCircumference = ['chest', 'waist', 'thigh', 'sleeve'].includes(clothingKey);
-                    return <FitVisualizer key={clothingKey} label={label} clothingVal={clothingVal} userCirc={userCirc} userFlat={userFlat} canBeCircumference={canBeCircumference} />;
-                  })}
-                </div>
-              </div>
-            );
-          })()}
         </div>
       </div>
     </div>

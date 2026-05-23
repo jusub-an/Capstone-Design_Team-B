@@ -290,7 +290,7 @@ function ProductDetail() {
                         background: 'linear-gradient(135deg, #6366f1, #a855f7)',
                         color: 'white', fontWeight: 700, fontSize: '0.88rem', cursor: 'pointer',
                       }}>
-                      ✨ 가상 피팅룸에서 착용해보기
+                  가상 피팅룸에서 착용해보기
                     </button>
                   </div>
                 </div>
@@ -369,7 +369,7 @@ function ProductDetail() {
             <div className="info-divider"></div>
 
             <button className="btn-virtual-fitting" onClick={() => navigate(`/products/${id}/fitting`)}>
-              ✨ 가상 피팅 시뮬레이션
+              가상 피팅 시뮬레이션
             </button>
 
             <div className="purchase-actions">

@@ -148,7 +148,6 @@ class AvatarResponse(BaseModel):
     id: int
     user_email: str
     gray_mask_url: str | None = None
-    person_extracted_url: str | None = None
     measurements: Any | None = None
     height_cm: float | None = None
 

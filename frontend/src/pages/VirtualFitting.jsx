@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Send, Sparkles, Ruler, MessageSquare, Info, Key, User } from 'lucide-react';
+import { ArrowLeft, Send, Sparkles, Ruler, MessageSquare, Info, User, Heart, ShoppingBag } from 'lucide-react';
+import './ProductList.css';
 import './VirtualFitting.css';
 
 const BASE = 'http://localhost:8000';
@@ -24,24 +25,31 @@ function VirtualFitting() {
     { sender: 'bot', text: '안녕하세요! AI 핏 어드바이저입니다. 현재는 상품 상세 이미지를 기반으로 질문에 답변해 드립니다. 무엇이든 물어보세요!' }
   ]);
   const [inputMsg, setInputMsg] = useState('');
-  const [apiKey, setApiKey] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [productImages, setProductImages] = useState([]);
   const [productInfo, setProductInfo] = useState(null);
   const [productReviews, setProductReviews] = useState([]);
 
-  // ── overlay canvas state ──
+  const username = sessionStorage.getItem('username') || 'User';
+  const isLoggedIn = !!sessionStorage.getItem('token');
+  const [cartCount, setCartCount] = useState(0);
+
   const canvasRef = useRef(null);
   const userEmail = sessionStorage.getItem('userEmail');
   const [avatar, setAvatar] = useState(null);
   const [avatarImg, setAvatarImg] = useState(null);
   const [selectedSize, setSelectedSize] = useState(null);
   const [showSizeOverlay, setShowSizeOverlay] = useState(true);
-  const [showDimLines, setShowDimLines] = useState(false);
+  const [showDimLines, setShowDimLines] = useState(true);
   const [sleeveAngle, setSleeveAngle] = useState('auto');
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const dragStartPos = useRef({ x: 0, y: 0 });
+
+  const messagesEndRef = useRef(null);
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isTyping]);
 
   const handleMouseDown = (e) => {
     setIsDragging(true);
@@ -106,7 +114,21 @@ function VirtualFitting() {
     fetchData();
   }, [id]);
 
-  // ── fetch avatar ──────────────────────────────────────────────────
+  useEffect(() => {
+    if (!userEmail) return;
+    fetch(`http://localhost:8000/api/cart/${encodeURIComponent(userEmail)}`)
+      .then(r => r.ok ? r.json() : [])
+      .then(items => setCartCount(items.length))
+      .catch(() => {});
+  }, [userEmail]);
+
+  const handleLogout = () => {
+    sessionStorage.removeItem('token');
+    sessionStorage.removeItem('username');
+    sessionStorage.removeItem('userEmail');
+    navigate('/login');
+  };
+
   useEffect(() => {
     if (!userEmail) return;
     fetch(`${BASE}/api/avatar/${encodeURIComponent(userEmail)}`)
@@ -115,7 +137,6 @@ function VirtualFitting() {
       .catch(() => {});
   }, [userEmail]);
 
-  // ── remove gray/white background from avatar JPEG ─────────────────
   const removeBackground = useCallback((img, isGray) => {
     const off = document.createElement('canvas');
     off.width = img.width; off.height = img.height;
@@ -162,7 +183,6 @@ function VirtualFitting() {
     return off;
   }, []);
 
-  // ── load avatar image ──────────────────────────────────────────────
   useEffect(() => {
     if (!avatar?.gray_mask_url) { setAvatarImg(null); return; }
     const img = new Image();
@@ -172,7 +192,6 @@ function VirtualFitting() {
     img.src = `${BASE}${avatar.gray_mask_url}`;
   }, [avatar, removeBackground]);
 
-  // ── init selected size ────────────────────────────────────────────
   useEffect(() => {
     if (!productInfo) return;
     const isTop = productInfo.category?.name?.includes('상의') ?? true;
@@ -180,7 +199,7 @@ function VirtualFitting() {
     if (sizes?.length > 0) setSelectedSize(sizes[0]);
   }, [productInfo]);
 
-  // ── auto calculate sleeve angle ──────────────────────────────────
+  // 소매 및 다리 각도 자동 계산
   const getAutoSleeveAngle = useCallback(() => {
     if (avatar && avatar.measurements) {
       try {
@@ -215,7 +234,6 @@ function VirtualFitting() {
 
   const currentSleeveAngle = sleeveAngle === 'auto' ? getAutoSleeveAngle() : sleeveAngle;
 
-  // ── draw canvas ───────────────────────────────────────────────────
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -243,16 +261,10 @@ function VirtualFitting() {
           if (m && m.height_ratio) heightRatio = m.height_ratio;
         } catch(e) {}
       }
-      // DRAW_H는 발가락 끝까지 타이트 크롭된 전체 이미지 높이입니다.
-      // 실제 입력받은 키(avatar.height_cm)는 발꿈치까지의 길이이므로, 
-      // 전체 이미지 높이 비율(heightRatio)을 곱해 보정합니다.
       const px_per_cm = DRAW_H / (avatar.height_cm * heightRatio);
       const isTop = productInfo?.category?.name?.includes('상의') ?? true;
       
       const centerX = CV_W / 2;
-      // 평균적 머리 높이 = 키의 13.5% (1/7.4)
-      // avatar 이미지는 OFFSET_Y에서 그려지며 실루엣의 매 픽셀 = px_per_cm 단위이므로
-      // 의류 시작점도 동일한 px_per_cm 기준으로 계산
       const headHeight_cm = avatar.height_cm * 0.135; // 머리높이 아래에 어깨선이 시작
       const startY = isTop
         ? OFFSET_Y + headHeight_cm * px_per_cm
@@ -262,23 +274,19 @@ function VirtualFitting() {
       const getLabel = (name, val) => (val && val > 0) ? `${name} ${val}cm` : `${name} 정보 없음`;
       const isMissing = (val) => !(val && val > 0);
 
-      // --- NEW LOGIC: Circumference based rendering (3D -> 2D Drape Simulation) ---
       const calcRenderWidth = (clothingFlat, userCirc, userFlat, defaultFlat) => {
         const flat = getVal(clothingFlat, defaultFlat);
         if (!userFlat) return flat * px_per_cm;
         
-        // 만약 DB에서 추출한 실제 '둘레' 데이터가 있다면 (단면 추론 절대 안 함)
         if (userCirc) {
           const clothingCirc = flat * 2;
           const ease = clothingCirc - userCirc;
           if (ease < 0) {
             return userFlat * px_per_cm;
           } else {
-            // 원주율(PI)을 적용하여 3D 둘레 증가분을 2D 너비 증가분으로 정확히 변환
             return (userFlat + ease / Math.PI) * px_per_cm;
           }
         } else {
-          // 둘레 데이터가 없다면 (단면/길이 항목이거나 DB에 없는 경우) 단면 vs 단면
           const ease = flat - userFlat;
           if (ease < 0) {
             return userFlat * px_per_cm;
@@ -352,7 +360,6 @@ function VirtualFitting() {
         const neckWidth = getVal(neckVal, 15) * px_per_cm;
         const shoulderWidth = getVal(shoulderVal, 40) * px_per_cm;
         
-        // Use Circumference-based Chest Width calculation
         const chestWidth = calcRenderWidth(chestVal, getAvatarMeasure('chest_circumference'), getAvatarMeasure('chest'), 50);
         
         const totalLength = getVal(lengthVal, 65) * px_per_cm;
@@ -374,7 +381,6 @@ function VirtualFitting() {
         const ry1 = startY + shoulderDrop + sleeveLength * Math.sin(angle);
         ctx.lineTo(rx1, ry1);
         
-        // 소매폭을 팔너비(arm_width)를 기반으로 타원 둘레 공식을 적용하여 추정
         const userArmWidth = getAvatarMeasure('arm_width');
         const userArmCirc = estimateArmCircumference(userArmWidth);
         const sleeveOpening = calcRenderWidth(sleeveWidthVal, userArmCirc, userArmWidth, 16);
@@ -424,7 +430,6 @@ function VirtualFitting() {
           
           const sx3 = sx2 - sleeveOpening * Math.sin(angle);
           const sy3 = sy2 + sleeveOpening * Math.cos(angle);
-          // 소매단면 치수선
           drawDimLine(sx2 + 5, sy2 + 5, sx3 + 5, sy3 + 5, getLabel('소매단면', sleeveWidthVal), 10, 0, isMissing(sleeveWidthVal));
           
           drawDimLine(centerX - neckWidth/2, startY - 10, centerX + neckWidth/2, startY - 10, getLabel('목폭', neckVal), 0, -10, isMissing(neckVal));
@@ -437,10 +442,8 @@ function VirtualFitting() {
         const riseVal = selectedSize.rise;
         const hemVal = selectedSize.hem;
 
-        // Use Circumference-based Waist Width calculation
         const waistWidth = calcRenderWidth(waistVal, getAvatarMeasure('waist_circumference'), getAvatarMeasure('waist'), 35);
         
-        // Use Circumference-based Thigh calculation
         const thighWidth = calcRenderWidth(thighVal, getAvatarMeasure('thigh_circumference'), getAvatarMeasure('thigh'), 25);
         
         const totalLength = getVal(lengthVal, 100) * px_per_cm;
@@ -453,7 +456,6 @@ function VirtualFitting() {
         
         const legAngleRad = getLegAngle() * Math.PI / 180;
         
-        // Shrink hemWidth proportionally if thighWidth was shrunk by projection
         const rawThighWidth = getVal(thighVal, 25) * px_per_cm;
         const thighRatio = rawThighWidth > 0 ? (thighWidth / rawThighWidth) : 1;
         const renderHemWidth = getVal(hemVal, 20) * px_per_cm * Math.max(thighRatio, 0.4);
@@ -505,10 +507,8 @@ function VirtualFitting() {
       ctx.restore();
     }
     
-    
-    ctx.restore(); // Restore global translation
+    ctx.restore();
 
-    // ── 가이드라인 시각화 (Height Visualization) - 드래그에 고정됨 ──
     if (showDimLines && avatar) {
       let heightRatioGuide = 1;
       if (avatar.measurements) {
@@ -543,7 +543,6 @@ function VirtualFitting() {
     }
   }, [avatarImg, selectedSize, avatar, productInfo, showSizeOverlay, dragOffset, showDimLines, sleeveAngle]);
 
-  // ── size list & fit badge helpers ─────────────────────────────────
   const getSizes = () => {
     if (!productInfo) return [];
     const isTop = productInfo.category?.name?.includes('상의') ?? true;
@@ -561,7 +560,7 @@ function VirtualFitting() {
 
   const isTop = productInfo?.category?.name?.includes('상의') ?? true;
   
-  // ── NEW Visual Fit Diagnosis UI Component ──
+  // 핏 시각화 컴포넌트
   const FitVisualizer = ({ label, clothingVal, userCirc, userFlat, canBeCircumference }) => {
     if (!clothingVal) return null;
     
@@ -572,15 +571,12 @@ function VirtualFitting() {
     let userDisplay = '';
     let clothDisplay = '';
 
-    // 사용자 DB에 실제 둘레 데이터가 존재하는 경우에만 '둘레 기반 분석' 진행
     const useCirc = canBeCircumference && userCirc != null;
 
     if (useCirc) {
-      // 의류 단면을 2배하여 원단 총 둘레 도출
       const clothingCirc = clothingVal * 2;
       ease = clothingCirc - userCirc;
       
-      // DB 실수 그대로 사용 (어떠한 반올림도 없음)
       userDisplay = `${userCirc}cm`;
       clothDisplay = `${clothingCirc}cm`;
       
@@ -596,7 +592,6 @@ function VirtualFitting() {
         statusText = `오버사이즈 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#8b5cf6'; percent = 95;
       }
     } else {
-      // 단면/길이 기반 분석
       if (!userFlat) return null;
       ease = clothingVal - userFlat;
       userDisplay = `${userFlat}cm`;
@@ -658,7 +653,7 @@ function VirtualFitting() {
       img.crossOrigin = 'anonymous';
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const MAX_DIM = 1024; // 이미지 크기를 줄여서 API 페이로드 초과 방지
+        const MAX_DIM = 1024;
         let width = img.width;
         let height = img.height;
 
@@ -673,18 +668,23 @@ function VirtualFitting() {
         canvas.width = width;
         canvas.height = height;
         const ctx = canvas.getContext('2d');
-        ctx.fillStyle = "#ffffff"; // 투명 배경을 흰색으로
+        ctx.fillStyle = "#ffffff";
         ctx.fillRect(0, 0, width, height);
         ctx.drawImage(img, 0, 0, width, height);
 
-        // JPEG로 압축하여 base64 크기 최소화
         resolve(canvas.toDataURL('image/jpeg', 0.8));
       };
 
       img.onerror = () => {
-        // img 로드 실패 시 fetch 방식 폴백
         fetch(imageUrl)
-          .then(res => res.blob())
+          .then(res => {
+            if (!res.ok) throw new Error("Image fetch failed");
+            const contentType = res.headers.get('content-type');
+            if (!contentType || !contentType.startsWith('image/')) {
+              throw new Error("Not an image");
+            }
+            return res.blob();
+          })
           .then(blob => {
             const reader = new FileReader();
             reader.onloadend = () => resolve(reader.result);
@@ -694,7 +694,6 @@ function VirtualFitting() {
           .catch(reject);
       };
 
-      // 캐시 방지 처리
       img.src = imageUrl + "?t=" + new Date().getTime();
     });
   };
@@ -702,10 +701,6 @@ function VirtualFitting() {
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!inputMsg.trim()) return;
-    if (!apiKey) {
-      alert("OpenRouter API Key를 입력해주세요.");
-      return;
-    }
 
     const userMessageText = inputMsg;
     const newMessages = [...messages, { sender: 'user', text: userMessageText }];
@@ -725,8 +720,39 @@ function VirtualFitting() {
 - 찜 개수: ${productInfo.wish_count || 0}개
 - 평균 별점: ${productInfo.avg_rating || 0} / 5.0 (총 ${productInfo.review_count || 0}개 리뷰)
 
-[고객 리뷰 요약]
 `;
+
+        const sizes = productInfo.category?.name?.includes('상의') ? productInfo.top_sizes : productInfo.bottom_sizes;
+        if (sizes && sizes.length > 0) {
+          productDetailsText += `[상품 사이즈표]\n` + sizes.map(s => {
+            const parts = [`사이즈명: ${s.size_name}`];
+            if (s.length) parts.push(`총장 ${s.length}cm`);
+            if (s.shoulder) parts.push(`어깨 ${s.shoulder}cm`);
+            if (s.chest) parts.push(`가슴단면 ${s.chest}cm`);
+            if (s.sleeve) parts.push(`소매단면 ${s.sleeve}cm`);
+            if (s.sleeve_length) parts.push(`소매길이 ${s.sleeve_length}cm`);
+            if (s.neck) parts.push(`목폭 ${s.neck}cm`);
+            if (s.waist) parts.push(`허리단면 ${s.waist}cm`);
+            if (s.thigh) parts.push(`허벅지단면 ${s.thigh}cm`);
+            if (s.rise) parts.push(`밑위 ${s.rise}cm`);
+            if (s.hem) parts.push(`밑단단면 ${s.hem}cm`);
+            return parts.join(', ');
+          }).join('\n') + `\n\n`;
+        }
+
+        let userMeasurements = "신체 치수 정보 없음";
+        if (avatar && avatar.measurements) {
+          try {
+            const m = typeof avatar.measurements === 'string' ? JSON.parse(avatar.measurements) : avatar.measurements;
+            const items = Array.isArray(m) ? m : (m.items || []);
+            if (items.length > 0) {
+              userMeasurements = items.map(item => `${item.label}: ${item.value_cm}cm`).join(', ');
+            }
+          } catch(e) {}
+        }
+        productDetailsText += `[사용자 신체 치수]\n- ${userMeasurements}\n\n`;
+
+        productDetailsText += `[고객 리뷰 요약]\n`;
         if (productReviews && productReviews.length > 0) {
           // 토큰 절약을 위해 최근 리뷰 최대 10개만 전송
           const recentReviews = productReviews.slice(0, 10);
@@ -758,44 +784,47 @@ ${productDetailsText}
         content: m.text
       }));
 
-      // 마지막 사용자 메시지에 이미지를 포함시킴 (최신 질문에 대한 컨텍스트로 제공)
       if (productImages.length > 0) {
-        const lastUserMsg = history[history.length - 1];
-        lastUserMsg.content = [
-          { type: "text", text: lastUserMsg.content },
-          ...productImages.map(base64 => ({
-            type: "image_url",
-            image_url: { url: base64 }
-          }))
-        ];
+        const validImages = productImages.filter(base64 => base64 && base64.startsWith('data:image/'));
+        if (validImages.length > 0) {
+          const lastUserMsg = history[history.length - 1];
+          lastUserMsg.content = [
+            { type: "text", text: lastUserMsg.content },
+            ...validImages.map(base64 => ({
+              type: "image_url",
+              image_url: { url: base64 }
+            }))
+          ];
+        }
       }
 
       apiMessages.push(...history);
 
-      fetch("https://openrouter.ai/api/v1/chat/completions", {
+      fetch("http://localhost:8000/api/chat", {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${apiKey}`,
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          model: "openai/gpt-4o-mini", // 비전(이미지) 처리를 지원하는 모델
-          messages: apiMessages,
-          temperature: 0.1 // 정보의 정확성을 위해 낮은 temperature 설정
+          messages: apiMessages
         })
       })
-        .then(res => {
-          if (!res.ok) throw new Error("API 요청 실패");
+        .then(async res => {
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.detail || "API 서버 에러");
+          }
           return res.json();
         })
         .then(data => {
-          const botResponse = data.choices[0].message.content;
+          let botResponse = data.choices[0].message.content;
+          botResponse = botResponse.replace(/\*\*/g, '').replace(/#/g, '');
           setMessages(prev => [...prev, { sender: 'bot', text: botResponse }]);
           setIsTyping(false);
         })
         .catch(error => {
           console.error(error);
-          setMessages(prev => [...prev, { sender: 'bot', text: '죄송합니다. 오류가 발생했습니다. API 키가 유효한지 확인해주세요.' }]);
+          setMessages(prev => [...prev, { sender: 'bot', text: `죄송합니다. 오류가 발생했습니다: ${error.message}` }]);
           setIsTyping(false);
         });
 
@@ -806,7 +835,39 @@ ${productDetailsText}
   };
 
   return (
-    <div className="vf-page-wrapper">
+    <div className="vf-page-wrapper product-list-container" style={{ paddingBottom: 0, display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+      <header className="product-header">
+        <div className="logo-section" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>
+          <h2>Virtual Fitting</h2>
+        </div>
+
+        <div className="header-actions">
+          <button className="action-icon-btn" onClick={() => navigate('/mypage/wishes')}>
+            <Heart size={22} />
+          </button>
+          <button className="action-icon-btn" onClick={() => navigate('/mypage/fitting')}>
+            <ShoppingBag size={22} />
+            {cartCount > 0 && <span className="badge">{cartCount}</span>}
+          </button>
+
+          {isLoggedIn ? (
+            <div className="user-profile-wrapper">
+              <div className="user-avatar" title="User Profile">
+                {username.charAt(0).toUpperCase()}
+              </div>
+              <div className="dropdown-menu">
+                <ul>
+                  <li onClick={() => navigate('/mypage')}>마이페이지</li>
+                  <li onClick={handleLogout} className="logout-action">로그아웃</li>
+                </ul>
+              </div>
+            </div>
+          ) : (
+            <button className="login-header-button" onClick={() => navigate('/login')}>로그인</button>
+          )}
+        </div>
+      </header>
+
       <header className="vf-header">
         <div className="vf-header-left">
           <button className="vf-back-btn" onClick={() => navigate(-1)}>
@@ -828,7 +889,6 @@ ${productDetailsText}
       </header>
 
       <main className="vf-main-content">
-        {/* Left: 2D 가상 피팅 시뮬레이션 영역 */}
         <section className="vf-visualization-section">
           <div className="vf-visual-header">
             <Sparkles className="vf-icon" />
@@ -836,7 +896,6 @@ ${productDetailsText}
           </div>
 
           <div className="vf-canvas-container" style={{ gap: '12px' }}>
-            {/* ── overlay canvas ── */}
             {!userEmail ? (
               <div style={{ textAlign: 'center', color: '#94a3b8', padding: '40px 0' }}>
                 <User size={40} style={{ marginBottom: '8px' }} />
@@ -854,7 +913,6 @@ ${productDetailsText}
             ) : (
               <div style={{ display: 'flex', flexDirection: 'row', width: '100%', gap: '30px', alignItems: 'flex-start', justifyContent: 'center', flexWrap: 'wrap' }}>
                 
-                {/* ── Left: Canvas ── */}
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
                   <canvas
                     ref={canvasRef}
@@ -872,36 +930,29 @@ ${productDetailsText}
                   </p>
                 </div>
 
-                {/* ── Right: Size Selector & Fit Analysis ── */}
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '20px', minWidth: '280px', maxWidth: '340px' }}>
                   
-                  {/* ── size selector ── */}
                   {getSizes().length > 0 && (
                     <div style={{ width: '100%' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '10px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <p style={{ margin: 0, fontSize: '0.78rem', color: '#64748b', fontWeight: 600 }}>사이즈 선택</p>
                           <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', color: '#64748b', cursor: 'pointer' }}>
-                              <input 
-                                type="checkbox" 
-                                checked={showSizeOverlay} 
-                                onChange={(e) => setShowSizeOverlay(e.target.checked)} 
-                                style={{ accentColor: '#6366f1' }}
-                              />
-                              핏 시각화
-                            </label>
-                            {showSizeOverlay && (
-                              <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', color: '#64748b', cursor: 'pointer' }}>
-                                <input 
-                                  type="checkbox" 
-                                  checked={showDimLines} 
-                                  onChange={(e) => setShowDimLines(e.target.checked)} 
-                                  style={{ accentColor: '#ef4444' }}
-                                />
-                                치수선 보기
-                              </label>
-                            )}
+                            <div
+                              onClick={() => setShowDimLines(!showDimLines)}
+                              style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+                            >
+                              <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600, userSelect: 'none' }}>
+                                치수선 표시
+                              </span>
+                              <div style={{ width: '36px', height: '20px', backgroundColor: showDimLines ? '#6366f1' : '#e2e8f0', borderRadius: '20px', position: 'relative', transition: 'background-color 0.2s ease-in-out', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.1)' }}>
+                                <div style={{
+                                  position: 'absolute', top: '2px', left: showDimLines ? '18px' : '2px',
+                                  width: '16px', height: '16px', backgroundColor: 'white',
+                                  borderRadius: '50%', transition: 'left 0.2s ease-in-out', boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+                                }} />
+                              </div>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -923,7 +974,6 @@ ${productDetailsText}
                     </div>
                   )}
 
-                  {/* ── fit analysis for selected size ── */}
                   {selectedSize && avatar?.measurements && (
                     <div style={{ width: '100%', background: '#ffffff', borderRadius: '14px', padding: '16px', boxShadow: '0 4px 14px rgba(0,0,0,0.03)', border: '1px solid #f1f5f9' }}>
                       <p style={{ margin: '0 0 16px', fontSize: '0.85rem', fontWeight: 800, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -959,22 +1009,11 @@ ${productDetailsText}
           </div>
         </section>
 
-        {/* Right: AI 핏 상담 챗봇 영역 */}
         <section className="vf-chat-section">
           <div className="vf-chat-header">
             <div className="vf-chat-title">
               <MessageSquare className="vf-icon" />
               <h3>AI 핏 어드바이저</h3>
-            </div>
-            <div className="vf-api-key-container">
-              <Key size={14} className="vf-api-key-icon" />
-              <input
-                type="password"
-                placeholder="OpenRouter API Key 입력"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                className="vf-api-key-input"
-              />
             </div>
           </div>
 
@@ -1002,6 +1041,7 @@ ${productDetailsText}
                   </div>
                 </div>
               )}
+            <div ref={messagesEndRef} />
             </div>
 
             <form className="vf-chat-input-area" onSubmit={handleSendMessage}>

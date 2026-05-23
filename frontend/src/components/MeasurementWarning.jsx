@@ -1,4 +1,5 @@
 import React from 'react';
+import { AlertTriangle } from 'lucide-react';
 import './MeasurementWarning.css';
 
 /**
@@ -124,8 +125,8 @@ function MeasurementWarning({ warnings, onShowGuide }) {
 
   return (
     <div className="mw-container">
-      <div className="mw-header">
-        <span className="mw-icon">⚠️</span>
+      <div className="mw-header" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <AlertTriangle size={20} className="mw-icon" color="#eab308" />
         <span className="mw-title">옷의 비율이 기형적으로 측정되었습니다</span>
       </div>
       <p className="mw-desc">

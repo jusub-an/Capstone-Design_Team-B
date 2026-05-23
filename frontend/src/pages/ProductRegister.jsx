@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { Heart, ShoppingBag, ChevronLeft, Upload, Tag, LayoutGrid, ChevronDown, ChevronRight, Check, Camera } from 'lucide-react';
 import './ProductRegister.css';
+import './ProductList.css';
 import MeasurementGuide from '../components/MeasurementGuide';
 import ErrorToast from '../components/ErrorToast';
 import MeasurementWarning, { validateMeasurements } from '../components/MeasurementWarning';
@@ -28,8 +30,10 @@ function ProductRegister() {
   const [descImages, setDescImages] = useState([]);
   const [loading, setLoading] = useState(false);
   const userEmail = sessionStorage.getItem('userEmail')?.trim();
+  const username = sessionStorage.getItem('username') || 'User';
+  const isLoggedIn = !!sessionStorage.getItem('token');
+  const [cartCount, setCartCount] = useState(0);
 
-  // CV Algorithm State
   const [showCvModal, setShowCvModal] = useState(false);
   const [cvImage, setCvImage] = useState(null);
   const [cvStep, setCvStep] = useState(0); // 0: upload, 1: draw shirt, 2: draw a4, 3: ready
@@ -51,10 +55,23 @@ function ProductRegister() {
 
   useEffect(() => {
     fetchCategories();
+    if (userEmail) {
+      fetch(`http://localhost:8000/api/cart/${encodeURIComponent(userEmail)}`)
+        .then(r => r.ok ? r.json() : [])
+        .then(items => setCartCount(items.length))
+        .catch(() => {});
+    }
     if (isEditMode) {
       fetchProductData();
     }
   }, [id]);
+
+  const handleLogout = () => {
+    sessionStorage.removeItem('token');
+    sessionStorage.removeItem('username');
+    sessionStorage.removeItem('userEmail');
+    navigate('/login');
+  };
 
   const fetchCategories = async () => {
     try {
@@ -189,7 +206,6 @@ function ProductRegister() {
     }
   };
 
-  // --- CV Canvas Logic ---
   const handleCvImageUpload = (e) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
@@ -199,7 +215,7 @@ function ProductRegister() {
         img.onload = () => {
           imgRef.current = img;
           const MAX_WIDTH = 800;
-          const MAX_HEIGHT = Math.max(window.innerHeight * 0.55, 300); // Prevent overflow on various screens
+          const MAX_HEIGHT = Math.max(window.innerHeight * 0.55, 300);
           let w = img.width, h = img.height;
           let scale = 1;
           
@@ -408,7 +424,6 @@ function ProductRegister() {
         if (data.fitting_image_url) setCvFittingImageUrl(data.fitting_image_url);
         setCvStep(5);
 
-        // 비율 기반 비정상 치수 검증
         const validation = validateMeasurements(data, formData.category_type);
         setMeasurementWarnings(validation.warnings);
       } else {
@@ -480,7 +495,40 @@ function ProductRegister() {
   };
 
   return (
-    <div className="register-container">
+    <div className="register-container product-list-container" style={{ paddingBottom: '60px' }}>
+      {/* 공통 헤더 */}
+      <header className="product-header">
+        <div className="logo-section" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>
+          <h2>Virtual Fitting</h2>
+        </div>
+
+        <div className="header-actions">
+          <button className="action-icon-btn" onClick={() => navigate('/mypage/wishes')}>
+            <Heart size={22} />
+          </button>
+          <button className="action-icon-btn" onClick={() => navigate('/mypage/fitting')}>
+            <ShoppingBag size={22} />
+            {cartCount > 0 && <span className="badge">{cartCount}</span>}
+          </button>
+
+          {isLoggedIn ? (
+            <div className="user-profile-wrapper">
+              <div className="user-avatar" title="User Profile">
+                {username.charAt(0).toUpperCase()}
+              </div>
+              <div className="dropdown-menu">
+                <ul>
+                  <li onClick={() => navigate('/mypage')}>마이페이지</li>
+                  <li onClick={handleLogout} className="logout-action">로그아웃</li>
+                </ul>
+              </div>
+            </div>
+          ) : (
+            <button className="login-header-button" onClick={() => navigate('/login')}>로그인</button>
+          )}
+        </div>
+      </header>
+
       {/* CV Modal */}
       {/* ErrorToast 오버레이 */}
       {errorToast && (
@@ -495,16 +543,13 @@ function ProductRegister() {
         <div className="cv-modal-overlay">
           <div className={`cv-modal ${isGuideOpen ? 'cv-modal-expanded' : ''} ${devDebugOpen ? 'cv-modal-debug-open' : ''}`}>
 
-            {/* 왼쪽: 가이드 패널 (모달 너비를 확장하면서 나타남) */}
             <MeasurementGuide
               categoryType={formData.category_type}
               isOpen={isGuideOpen}
               onClose={() => setIsGuideOpen(false)}
             />
 
-            {/* 오른쪽: 메인 콘텐츠 */}
             <div className="cv-main">
-              {/* 헤더 */}
               <div className="cv-header">
                 <button
                   type="button"
@@ -515,22 +560,20 @@ function ProductRegister() {
                   ?
                 </button>
                 <h3 className="cv-title">
-                  {formData.category_type === 'Top' ? '👕' : '👖'} AI 자동 치수 추출
+                {formData.category_type === 'Top' ? '상의' : '하의'} AI 자동 치수 추출
                 </h3>
                 <button className="cv-close-btn" onClick={handleCloseCvModal}>✕</button>
               </div>
 
-              {/* 단계 표시줄 */}
               <div className="cv-stepper">
                 {['업로드', '의류 영역', 'A4 영역', '분석', '결과'].map((label, i) => (
                   <div key={i} className={`cv-step-dot ${cvStep >= i ? 'cv-step-active' : ''} ${cvStep === i ? 'cv-step-current' : ''}`}>
-                    <div className="cv-dot-circle">{cvStep > i ? '✓' : i + 1}</div>
+                  <div className="cv-dot-circle">{cvStep > i ? <Check size={14} /> : i + 1}</div>
                     <span className="cv-dot-label">{label}</span>
                   </div>
                 ))}
               </div>
 
-              {/* 안내 메시지 */}
               <div className="cv-instructions">
                 {cvStep === 0 && "사진을 업로드 해주세요."}
                 {cvStep === 1 && <span>원본 이미지에서 <span style={{color:'#f87171'}}>의류 영역</span>을 드래그하여 박스를 쳐주세요.</span>}
@@ -540,19 +583,17 @@ function ProductRegister() {
                 {cvStep === 5 && "치수 추출 완료! 결과를 확인하고 적용하세요."}
               </div>
 
-              {/* Step 0: 업로드 */}
               {cvStep === 0 && (
                 <div className="cv-upload-area">
                   <input type="file" accept="image/*" onChange={handleCvImageUpload} id="cvImageInput" style={{display: 'none'}} />
                   <label htmlFor="cvImageInput" className="cv-upload-label">
-                    <span className="cv-upload-icon">📸</span>
+                <Camera size={32} color="#94a3b8" style={{ marginBottom: '8px' }} />
                     <span className="cv-upload-text">사진 선택하기</span>
                     <span className="cv-upload-sub">JPG, PNG 파일을 선택하세요</span>
                   </label>
                 </div>
               )}
 
-              {/* Step 1~4: 캔버스 */}
               <div className="cv-canvas-container" style={{ display: (cvStep > 0 && cvStep < 5) ? 'flex' : 'none' }}>
                 <canvas
                   ref={canvasRef}
@@ -566,7 +607,6 @@ function ProductRegister() {
                 ></canvas>
               </div>
 
-              {/* Step 5: 결과 */}
               {cvStep === 5 && cvResultData && (
                 <div className="cv-result-container">
                   <div className="cv-result-image">
@@ -593,7 +633,6 @@ function ProductRegister() {
                   </div>
                   <MeasurementWarning warnings={measurementWarnings} onShowGuide={scrollToGuide} />
 
-                  {/* 🔧 Developer Debug Visualization Panel */}
                   {cvResultData.debug_stages && (
                     <div className="dev-debug-panel">
                       <button
@@ -601,8 +640,8 @@ function ProductRegister() {
                         className="dev-debug-toggle"
                         onClick={() => setDevDebugOpen(!devDebugOpen)}
                       >
-                        <span className="dev-debug-toggle-icon">{devDebugOpen ? '▼' : '▶'}</span>
-                        <span>🔧 개발자 디버그 시각화</span>
+                    {devDebugOpen ? <ChevronDown size={14} color="#f59e0b" /> : <ChevronRight size={14} color="#f59e0b" />}
+                    <span>개발자 디버그 시각화</span>
                         <span className="dev-debug-badge">{Object.keys(cvResultData.debug_stages).length} stages</span>
                       </button>
                       {devDebugOpen && (
@@ -659,7 +698,6 @@ function ProductRegister() {
                 </div>
               )}
 
-              {/* 액션 버튼 */}
               <div className="cv-actions">
                 {(cvStep > 0 && cvStep < 5) && (
                   <>
@@ -676,7 +714,7 @@ function ProductRegister() {
                 )}
                 {cvStep === 4 && (
                   <button className="cv-btn primary" onClick={handleAnalyze} disabled={cvLoading}>
-                    {cvLoading ? '분석 중...' : '🚀 AI 분석 시작'}
+                  {cvLoading ? '분석 중...' : 'AI 분석 시작'}
                   </button>
                 )}
                 {cvStep === 5 && (
@@ -691,7 +729,7 @@ function ProductRegister() {
                       setCvStep(1); setRectShirt(null); setRectA4(null); setCurrentRect(null); setShoulderPts([]);
                       redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, null, null, null, []);
                     }}>다시 측정</button>
-                    <button className="cv-btn primary" onClick={handleApplyMeasurements}>✅ 치수 적용</button>
+                  <button className="cv-btn primary" onClick={handleApplyMeasurements}>치수 적용</button>
                   </>
                 )}
               </div>
@@ -707,26 +745,54 @@ function ProductRegister() {
         </div>
       )}
 
-      <div className="register-header-wrapper">
-        <button onClick={() => navigate('/mypage/products')} className="back-btn">&larr; 목록으로</button>
-        <h2>{isEditMode ? '상품 수정' : '상품 등록'}</h2>
-        <div style={{ width: '80px' }}></div>
+      <div style={{ maxWidth: '600px', margin: '40px auto 0', padding: '0 20px', boxSizing: 'border-box' }}>
+        <button onClick={() => navigate('/mypage/products')} className="back-btn" style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '0', marginBottom: '16px', background: 'transparent' }}>
+          <ChevronLeft size={20} />
+          <span>상품 관리</span>
+        </button>
+        <h1 style={{ margin: '0 0 8px', fontSize: '2rem', fontWeight: 800, color: '#1e293b', letterSpacing: '-0.5px' }}>
+          {isEditMode ? '상품 수정' : '상품 등록'}
+        </h1>
+        <p style={{ margin: 0, color: '#64748b' }}>판매할 상품의 상세 정보 및 사이즈를 입력해 주세요.</p>
       </div>
 
-      <div className="register-card">
+      <div className="register-card" style={{ marginTop: '24px' }}>
         <form onSubmit={handleSubmit} className="register-form">
-          <div className="form-group">
-            <label>브랜드 <span className="required">*</span></label>
-            <input type="text" name="brand" value={formData.brand} onChange={handleInputChange} required />
-          </div>
+          <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+            <div className="form-group" style={{ flex: 1, minWidth: '200px' }}>
+              <label style={{ color: '#334155', fontWeight: 600 }}>브랜드 <span className="required">*</span></label>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <Tag size={18} color="#94a3b8" style={{ position: 'absolute', left: '14px' }} />
+                <input 
+                  type="text" 
+                  name="brand" 
+                  value={formData.brand} 
+                  onChange={handleInputChange} 
+                  placeholder="예: 나이키"
+                  style={{ paddingLeft: '40px', width: '100%', boxSizing: 'border-box' }}
+                  required 
+                />
+              </div>
+            </div>
 
-          <div className="form-group">
-            <label>카테고리 <span className="required">*</span></label>
-            <select name="category_id" value={formData.category_id} onChange={handleInputChange} required>
-              {categories.map((cat) => (
-                <option key={cat.id} value={cat.id}>{cat.name}</option>
-              ))}
-            </select>
+            <div className="form-group" style={{ flex: 1, minWidth: '200px' }}>
+              <label style={{ color: '#334155', fontWeight: 600 }}>카테고리 <span className="required">*</span></label>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <LayoutGrid size={18} color="#94a3b8" style={{ position: 'absolute', left: '14px' }} />
+                <select 
+                  name="category_id" 
+                  value={formData.category_id} 
+                  onChange={handleInputChange} 
+                  style={{ paddingLeft: '40px', appearance: 'none', width: '100%', boxSizing: 'border-box' }}
+                  required
+                >
+                  {categories.map((cat) => (
+                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                  ))}
+                </select>
+                <ChevronDown size={18} color="#94a3b8" style={{ position: 'absolute', right: '14px', pointerEvents: 'none' }} />
+              </div>
+            </div>
           </div>
 
           {/* Dynamic Measurements Section */}
@@ -764,7 +830,7 @@ function ProductRegister() {
                             setShowCvModal(true);
                           }}
                         >
-                          ✨ AI 측정
+                    AI 측정
                         </button>
                       </div>
                       {sizes.length > 1 && (
@@ -845,17 +911,41 @@ function ProductRegister() {
 
           <div className="form-group">
             <label>상품 이미지 (대표) <span className="required">*</span></label>
-            <div className="file-input-wrapper">
-              <input type="file" accept="image/*" onChange={handleMainImageChange} className="file-input" />
-              <span className="file-name">{mainImage ? mainImage.name : '파일 선택'}</span>
+            <div
+              onClick={() => document.getElementById('mainImageInput').click()}
+              style={{
+                border: '2px dashed #cbd5e1', borderRadius: '14px',
+                padding: '40px', textAlign: 'center', cursor: 'pointer',
+                background: '#f8fafc', transition: 'border-color 0.2s',
+              }}
+              onMouseEnter={e => e.currentTarget.style.borderColor = '#6366f1'}
+              onMouseLeave={e => e.currentTarget.style.borderColor = '#cbd5e1'}
+            >
+              <Upload size={32} color="#94a3b8" style={{ marginBottom: '8px' }} />
+              <p style={{ margin: 0, fontSize: '0.9rem', color: '#64748b', fontWeight: 500 }}>
+                {mainImage ? mainImage.name : '클릭하여 대표 사진 업로드'}
+              </p>
+              <input id="mainImageInput" type="file" accept="image/*" onChange={handleMainImageChange} style={{ display: 'none' }} />
             </div>
           </div>
 
           <div className="form-group">
             <label>상품 상세 이미지(여러장 가능) <span className="required">*</span></label>
-            <div className="file-input-wrapper alternate">
-              <input type="file" accept="image/*" onChange={handleDescImageChange} className="file-input" multiple required={!isEditMode} />
-              <span className="file-name">{descImages.length > 0 ? `${descImages.length}개 선택됨` : '파일 선택'}</span>
+            <div
+              onClick={() => document.getElementById('descImageInput').click()}
+              style={{
+                border: '2px dashed #cbd5e1', borderRadius: '14px',
+                padding: '40px', textAlign: 'center', cursor: 'pointer',
+                background: '#f8fafc', transition: 'border-color 0.2s',
+              }}
+              onMouseEnter={e => e.currentTarget.style.borderColor = '#6366f1'}
+              onMouseLeave={e => e.currentTarget.style.borderColor = '#cbd5e1'}
+            >
+              <Upload size={32} color="#94a3b8" style={{ marginBottom: '8px' }} />
+              <p style={{ margin: 0, fontSize: '0.9rem', color: '#64748b', fontWeight: 500 }}>
+                {descImages.length > 0 ? `${descImages.length}개 파일 선택됨` : '클릭하여 상세 사진 업로드'}
+              </p>
+              <input id="descImageInput" type="file" accept="image/*" onChange={handleDescImageChange} style={{ display: 'none' }} multiple required={!isEditMode} />
             </div>
           </div>
 

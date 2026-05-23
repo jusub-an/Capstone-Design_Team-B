@@ -136,7 +136,7 @@ export default function MyReviews() {
                   <h3 className="product-name">{review.product.name}</h3>
                   {sizeReviews.some(sr => sr.product_id === review.product.id) && (
                     <span className="size-review-badge" style={{ display: 'inline-block', marginTop: '4px', padding: '3px 8px', fontSize: '0.75rem', fontWeight: 600, color: '#4f46e5', backgroundColor: '#eef2ff', borderRadius: '4px', border: '1px solid #c7d2fe' }}>
-                      📏 AI 실측 사이즈 포함
+                      AI 실측 사이즈 포함
                     </span>
                   )}
                   <div className="go-product">

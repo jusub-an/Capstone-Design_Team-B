@@ -82,7 +82,6 @@ class Review(Base):
     user_email = Column(String(100), ForeignKey("users.email"), nullable=False)
     rating = Column(Integer, nullable=False)
     comment = Column(Text, nullable=False)
-    # 기존 단일 이미지 필드는 유지하되, 다중 이미지 관계 추가
     image_url = Column(String(500), nullable=True) 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
@@ -110,15 +109,14 @@ class SizeReview(Base):
     id = Column(Integer, Identity(start=1), primary_key=True)
     product_id = Column(Integer, ForeignKey("products.id", ondelete="CASCADE"), nullable=False)
     user_email = Column(String(100), ForeignKey("users.email"), nullable=False)
-    size_name = Column(String(50), nullable=False)  # 선택한 사이즈 명칭 (예: S, M, L)
+    size_name = Column(String(50), nullable=False)
     
-    # 상의/하의 공통 또는 개별 치수 (최대 5개 항목)
     length = Column(Float, nullable=True)
-    chest_or_waist = Column(Float, nullable=True)  # 상의: 가슴, 하의: 허리
-    shoulder_or_thigh = Column(Float, nullable=True) # 상의: 어깨, 하의: 허벅지
-    sleeve_or_rise = Column(Float, nullable=True)  # 상의: 소매단면, 하의: 밑위
-    sleeve_length = Column(Float, nullable=True)   # 상의: 소매길이
-    neck_or_hem = Column(Float, nullable=True)    # 상의: 넥라인, 하의: 밑단
+    chest_or_waist = Column(Float, nullable=True)
+    shoulder_or_thigh = Column(Float, nullable=True)
+    sleeve_or_rise = Column(Float, nullable=True)
+    sleeve_length = Column(Float, nullable=True)
+    neck_or_hem = Column(Float, nullable=True)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
@@ -130,8 +128,7 @@ class Avatar(Base):
     id = Column(Integer, Identity(start=1), primary_key=True)
     user_email = Column(String(100), nullable=False, unique=True)
     gray_mask_url = Column(String(500), nullable=True)
-    person_extracted_url = Column(String(500), nullable=True)
-    measurements = Column(Text, nullable=True)  # JSON string
+    measurements = Column(Text, nullable=True)
     height_cm = Column(Float, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

@@ -1,15 +1,15 @@
 import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { ChevronLeft, Upload, Ruler, AlertTriangle, CheckCircle, Heart, ShoppingBag } from 'lucide-react';
+import { ChevronLeft, ChevronDown, ChevronUp, Upload, Ruler, AlertTriangle, CheckCircle, Heart, ShoppingBag } from 'lucide-react';
 import './MyReviews.css';
 import './ProductList.css';
 
 const TAB_LABELS = [
-  { key: 'debug',      label: '📏 측정 분석' },
-  { key: 'gray_debug', label: '📐 실루엣+측정' },
-  { key: 'extracted',  label: '✂️ 누끼'     },
-  { key: 'gray',       label: '🪄 실루엣'   },
+  { key: 'debug',      label: '측정 분석' },
+  { key: 'gray_debug', label: '실루엣+측정' },
+  { key: 'extracted',  label: '누끼'     },
+  { key: 'gray',       label: '실루엣'   },
 ];
 
 const cardStyle = {
@@ -39,8 +39,8 @@ function BodyMeasure() {
   const [cartOpen, setCartOpen] = useState(false);
   const [cartItems, setCartItems] = useState([]);
   const [cartCount, setCartCount] = useState(0);
+  const [isResultExpanded, setIsResultExpanded] = useState(false);
 
-  // 캔버스 드래그 크롭 상태
   const canvasRef = useRef(null);
   const imgRef = useRef(null);
   const [scaleFactor, setScaleFactor] = useState(1);
@@ -50,7 +50,6 @@ function BodyMeasure() {
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
 
-  // 측면 사진 캔버스 크롭
   const sideCanvasRef = useRef(null);
   const sideImgRef = useRef(null);
   const [sideSf, setSideSf] = useState(1);
@@ -62,7 +61,7 @@ function BodyMeasure() {
 
   const imagePreview = useMemo(() => (image ? URL.createObjectURL(image) : null), [image]);
 
-  // --- 캔버스 로직 (ProductRegister 패턴 재사용) ---
+  // 캔버스 초기화 및 그리기
   const redrawCanvas = useCallback((w, h, scale, rb, cr) => {
     const canvas = canvasRef.current;
     if (!canvas || !imgRef.current) return;
@@ -142,7 +141,7 @@ function BodyMeasure() {
         setScaleFactor(scale);
 
         setCropStep(1);
-        // React가 캔버스를 DOM에 렌더링할 시간을 충분히 부여
+        // 캔버스 렌더링 대기
         setTimeout(() => {
           const canvas = canvasRef.current;
           if (canvas) {
@@ -288,7 +287,7 @@ function BodyMeasure() {
     if (!image) { setError('전신 사진을 업로드해주세요.'); return; }
     if (!heightCm || Number(heightCm) <= 0) { setError('올바른 키(cm)를 입력해주세요.'); return; }
     if (cropStep < 2 || !rectBody) { setError('정면 사진에서 신체 영역을 드래그하여 지정해주세요.'); return; }
-    if (sideImage && sideCropStep < 2) { setError('측면 사진에서 신체 영역을 드래그하여 지정해주세요.'); return; }
+    if (!sideImage || sideCropStep < 2 || !sideRectBody) { setError('측면 사진에서 신체 영역을 드래그하여 지정해주세요.'); return; }
 
     setLoading(true);
     setError('');
@@ -310,6 +309,7 @@ function BodyMeasure() {
         timeout: 120000,
       });
       setResult(res.data);
+      setIsResultExpanded(true); // 측정 완료 시 자동으로 결과 펼치기
     } catch (err) {
       setError(err.response?.data?.detail || '분석 중 오류가 발생했습니다.');
     } finally {
@@ -358,7 +358,6 @@ function BodyMeasure() {
         anchors: result.anchors,
       }));
       fd.append('gray_mask', base64ToBlob(result.gray_mask_base64), 'gray_mask.jpg');
-      fd.append('person_extracted', base64ToBlob(result.person_extracted_base64), 'person_extracted.jpg');
       const res = await axios.post('http://localhost:8000/api/avatar/save', fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
@@ -371,6 +370,20 @@ function BodyMeasure() {
     } finally {
       setAvatarSaving(false);
     }
+  };
+
+  const handleResetMeasure = () => {
+    setResult(null);
+    setImage(null);
+    setSideImage(null);
+    setHeightCm('');
+    setCropStep(0);
+    setSideCropStep(0);
+    setRectBody(null);
+    setSideRectBody(null);
+    setAvatarSaved(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (sideFileInputRef.current) sideFileInputRef.current.value = '';
   };
 
   const handleLogout = () => {
@@ -433,7 +446,7 @@ function BodyMeasure() {
                         background: 'linear-gradient(135deg, #6366f1, #a855f7)',
                         color: 'white', fontWeight: 700, fontSize: '0.88rem', cursor: 'pointer',
                       }}>
-                      ✨ 가상 피팅룸에서 착용해보기
+                  가상 피팅룸에서 착용해보기
                     </button>
                   </div>
                 </div>
@@ -460,389 +473,379 @@ function BodyMeasure() {
       </header>
 
       <div className="my-reviews-container">
-        <div className="my-reviews-header">
-          <button onClick={() => navigate('/mypage')} className="back-btn">
+        <div className="my-reviews-header" style={{ maxWidth: '760px', margin: '0 auto', padding: '30px 20px 0', textAlign: 'left', boxSizing: 'border-box' }}>
+          <button onClick={() => navigate('/mypage')} className="back-btn" style={{ marginBottom: '16px' }}>
             <ChevronLeft size={20} />
             <span>마이페이지</span>
           </button>
-          <h1>신체 측정</h1>
-          <p>의류 사이즈와 비교하기 위한 신체 치수를 측정합니다.</p>
+          <h1 style={{ margin: '0 0 8px', fontSize: '2rem', fontWeight: 800, color: '#1e293b' }}>신체 측정</h1>
+          <p style={{ margin: 0, color: '#64748b' }}>의류 사이즈와 비교하기 위한 신체 치수를 측정합니다.</p>
         </div>
-      <main className="product-main" style={{ maxWidth: '760px', margin: '0 auto', padding: '30px 20px' }}>
+      <main className="product-main" style={{ maxWidth: '760px', margin: '0 auto', padding: '20px 20px 30px', boxSizing: 'border-box' }}>
 
-        <div style={{ ...cardStyle, marginBottom: '24px' }}>
-          {/* Step Indicator */}
-          <div style={{
-            display: 'flex', justifyContent: 'center', gap: '8px', marginBottom: '20px',
-          }}>
-            {['📷 사진 업로드', '✋ 영역 지정', '🚀 분석'].map((label, i) => (
-              <div key={i} style={{
-                flex: 1, textAlign: 'center', padding: '8px 0',
-                borderRadius: '10px', fontSize: '0.82rem', fontWeight: 600,
-                background: cropStep > i || (cropStep === 2 && i === 2)
-                  ? 'linear-gradient(135deg, #6e8efb, #a777e3)' : '#f0f0f5',
-                color: cropStep > i || (cropStep === 2 && i === 2) ? 'white' : '#999',
-                transition: 'all 0.3s',
-              }}>
-                {label}
+        {!result && (
+          <div style={{ ...cardStyle, marginBottom: '24px' }}>
+
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', fontWeight: 600, marginBottom: '8px', color: '#333' }}>
+                키 (cm)
+              </label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Ruler size={18} color="#6e8efb" />
+                <input
+                  type="number"
+                  min="100"
+                  max="250"
+                  placeholder="예: 175"
+                  value={heightCm}
+                  onChange={e => setHeightCm(e.target.value)}
+                  style={{
+                    flex: 1, padding: '10px 14px', borderRadius: '10px',
+                    border: '1px solid #ddd', fontSize: '1rem', outline: 'none',
+                  }}
+                />
+                <span style={{ color: '#888', fontSize: '0.9rem' }}>cm</span>
               </div>
-            ))}
-          </div>
+            </div>
 
-          {/* 사진 업로드 영역 */}
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', fontWeight: 600, marginBottom: '10px', color: '#333' }}>
-              전신 사진 (정면 A-포즈 권장)
-            </label>
+            {/* 사진 업로드 영역 */}
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', fontWeight: 600, marginBottom: '10px', color: '#333' }}>
+                정면 사진
+              </label>
 
-            {cropStep === 0 ? (
-              /* 업로드 전: 클릭하여 업로드 */
-              <div
-                onClick={() => fileInputRef.current.click()}
-                style={{
-                  border: '2px dashed #c0c8e8', borderRadius: '14px',
-                  padding: '40px', textAlign: 'center', cursor: 'pointer',
-                  background: '#f5f7ff', transition: 'border-color 0.2s',
-                }}
-                onMouseEnter={e => e.currentTarget.style.borderColor = '#6e8efb'}
-                onMouseLeave={e => e.currentTarget.style.borderColor = '#c0c8e8'}
-              >
-                <Upload size={32} color="#999" style={{ marginBottom: '8px' }} />
-                <p style={{ margin: 0, fontSize: '0.9rem', color: '#999' }}>클릭하여 사진 업로드</p>
-              </div>
-            ) : (
-              /* 업로드 후: 캔버스에서 드래그 */
-              <>
-                <div style={{
-                  background: cropStep === 1 ? '#e8f0fe' : '#e8fbe8',
-                  borderRadius: '10px', padding: '10px 14px', marginBottom: '10px',
-                  fontSize: '0.88rem', fontWeight: 500,
-                  color: cropStep === 1 ? '#1a56db' : '#27ae60',
-                  display: 'flex', alignItems: 'center', gap: '8px',
-                }}>
-                  {cropStep === 1 && '👆 사진에서 신체 영역을 드래그하여 박스를 그려주세요.'}
-                  {cropStep === 2 && <><CheckCircle size={16} /> 신체 영역이 지정되었습니다. 아래에서 분석을 시작하세요.</>}
+              {cropStep === 0 ? (
+                /* 업로드 전: 클릭하여 업로드 */
+                <div
+                  onClick={() => fileInputRef.current.click()}
+                  style={{
+                    border: '2px dashed #c0c8e8', borderRadius: '14px',
+                    padding: '40px', textAlign: 'center', cursor: 'pointer',
+                    background: '#f5f7ff', transition: 'border-color 0.2s',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.borderColor = '#6e8efb'}
+                  onMouseLeave={e => e.currentTarget.style.borderColor = '#c0c8e8'}
+                >
+                  <Upload size={32} color="#999" style={{ marginBottom: '8px' }} />
+                  <p style={{ margin: 0, fontSize: '0.9rem', color: '#999' }}>클릭하여 사진 업로드</p>
                 </div>
+              ) : (
+                /* 업로드 후: 캔버스에서 드래그 */
+                <>
+                  <div style={{
+                    background: cropStep === 1 ? '#e8f0fe' : '#e8fbe8',
+                    borderRadius: '10px', padding: '10px 14px', marginBottom: '10px',
+                    fontSize: '0.88rem', fontWeight: 500,
+                    color: cropStep === 1 ? '#1a56db' : '#27ae60',
+                    display: 'flex', alignItems: 'center', gap: '8px',
+                  }}>
+                    {cropStep === 1 && '사진에서 신체 영역을 드래그하여 박스를 그려주세요.'}
+                    {cropStep === 2 && <><CheckCircle size={16} /> 신체 영역이 지정되었습니다.</>}
+                  </div>
 
-                <div style={{
-                  display: 'flex', justifyContent: 'center',
-                  background: '#fafafa', borderRadius: '14px', padding: '8px',
-                  border: '1px solid #e8e8e8',
-                }}>
-                  <canvas
-                    ref={canvasRef}
-                    style={{ maxWidth: '100%', borderRadius: '10px', cursor: cropStep === 1 ? 'crosshair' : 'default', touchAction: 'none' }}
-                    onMouseDown={onDown}
-                    onMouseMove={onMove}
-                    onMouseUp={onUp}
-                    onTouchStart={onDown}
-                    onTouchMove={onMove}
-                    onTouchEnd={onUp}
-                  />
-                </div>
+                  <div style={{
+                    display: 'flex', justifyContent: 'center',
+                    background: '#fafafa', borderRadius: '14px', padding: '8px',
+                    border: '1px solid #e8e8e8',
+                  }}>
+                    <canvas
+                      ref={canvasRef}
+                      style={{ maxWidth: '100%', borderRadius: '10px', cursor: cropStep === 1 ? 'crosshair' : 'default', touchAction: 'none' }}
+                      onMouseDown={onDown}
+                      onMouseMove={onMove}
+                      onMouseUp={onUp}
+                      onTouchStart={onDown}
+                      onTouchMove={onMove}
+                      onTouchEnd={onUp}
+                    />
+                  </div>
 
-                <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                  <button
-                    onClick={() => fileInputRef.current.click()}
-                    style={{
-                      fontSize: '0.8rem', color: '#6e8efb',
-                      background: 'none', border: 'none', cursor: 'pointer', padding: 0,
-                    }}
-                  >
-                    사진 변경
-                  </button>
-                  {rectBody && (
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '12px', justifyContent: 'center' }}>
                     <button
-                      onClick={() => {
-                        setRectBody(null);
-                        setCropStep(1);
-                        redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, null, null);
-                      }}
+                      onClick={() => fileInputRef.current.click()}
                       style={{
-                        fontSize: '0.8rem', color: '#e67e22',
-                        background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                        padding: '8px 16px', borderRadius: '8px', border: '1px solid #c7d2fe',
+                        background: '#eef2ff', color: '#4f46e5', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer'
                       }}
                     >
-                      다시 그리기
+                      사진 변경
                     </button>
-                  )}
-                </div>
-              </>
-            )}
-
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              style={{ display: 'none' }}
-              onChange={handleImageChange}
-            />
-          </div>
-
-          {/* 측면 사진 (선택) */}
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ display: 'block', fontWeight: 600, marginBottom: '6px', color: '#333' }}>
-              측면 사진 <span style={{ fontWeight: 400, color: '#888', fontSize: '0.85rem' }}>(선택 · 가슴둘레·허리둘레 측정용)</span>
-            </label>
-
-            {sideCropStep === 0 ? (
-              <div
-                onClick={() => sideFileInputRef.current.click()}
-                style={{
-                  border: '2px dashed #c0c8e8', borderRadius: '12px',
-                  padding: '24px', textAlign: 'center', cursor: 'pointer',
-                  background: '#f5f7ff', transition: 'border-color 0.2s',
-                  display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'center',
-                }}
-                onMouseEnter={e => e.currentTarget.style.borderColor = '#6e8efb'}
-                onMouseLeave={e => e.currentTarget.style.borderColor = '#c0c8e8'}
-              >
-                <Upload size={20} color="#aaa" />
-                <span style={{ fontSize: '0.88rem', color: '#aaa' }}>측면 전신 사진 업로드 (선택)</span>
-              </div>
-            ) : (
-              <>
-                <div style={{
-                  background: sideCropStep === 1 ? '#e8f0fe' : '#e8fbe8',
-                  borderRadius: '10px', padding: '10px 14px', marginBottom: '10px',
-                  fontSize: '0.88rem', fontWeight: 500,
-                  color: sideCropStep === 1 ? '#1a56db' : '#27ae60',
-                  display: 'flex', alignItems: 'center', gap: '8px',
-                }}>
-                  {sideCropStep === 1 && '👆 측면 사진에서 신체 영역을 드래그하여 박스를 그려주세요.'}
-                  {sideCropStep === 2 && <><CheckCircle size={16} /> 측면 신체 영역이 지정되었습니다.</>}
-                </div>
-                <div style={{
-                  display: 'flex', justifyContent: 'center',
-                  background: '#fafafa', borderRadius: '14px', padding: '8px',
-                  border: '1px solid #e8e8e8',
-                }}>
-                  <canvas
-                    ref={sideCanvasRef}
-                    style={{ maxWidth: '100%', borderRadius: '10px', cursor: sideCropStep === 1 ? 'crosshair' : 'default', touchAction: 'none' }}
-                    onMouseDown={sideOnDown} onMouseMove={sideOnMove} onMouseUp={sideOnUp}
-                    onTouchStart={sideOnDown} onTouchMove={sideOnMove} onTouchEnd={sideOnUp}
-                  />
-                </div>
-                <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                  <button onClick={() => sideFileInputRef.current.click()}
-                    style={{ fontSize: '0.8rem', color: '#6e8efb', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                    사진 변경
-                  </button>
-                  <button onClick={() => { setSideImage(null); setSideCropStep(0); setSideRectBody(null); sideFileInputRef.current.value = ''; }}
-                    style={{ fontSize: '0.8rem', color: '#e74c3c', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                    삭제
-                  </button>
-                  {sideRectBody && (
-                    <button onClick={() => { setSideRectBody(null); setSideCropStep(1); sideRedrawCanvas(sideCanvasRef.current.width, sideCanvasRef.current.height, null, null); }}
-                      style={{ fontSize: '0.8rem', color: '#e67e22', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                      다시 그리기
-                    </button>
-                  )}
-                </div>
-              </>
-            )}
-
-            <input
-              ref={sideFileInputRef}
-              type="file" accept="image/*"
-              style={{ display: 'none' }}
-              onChange={handleSideImageChange}
-            />
-          </div>
-
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ display: 'block', fontWeight: 600, marginBottom: '8px', color: '#333' }}>
-              키 (cm)
-            </label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Ruler size={18} color="#6e8efb" />
-              <input
-                type="number"
-                min="100"
-                max="250"
-                placeholder="예: 175"
-                value={heightCm}
-                onChange={e => setHeightCm(e.target.value)}
-                style={{
-                  flex: 1, padding: '10px 14px', borderRadius: '10px',
-                  border: '1px solid #ddd', fontSize: '1rem', outline: 'none',
-                }}
-              />
-              <span style={{ color: '#888', fontSize: '0.9rem' }}>cm</span>
-            </div>
-          </div>
-
-          {error && (
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: '8px',
-              color: '#e74c3c', background: '#fdf0f0', borderRadius: '10px',
-              padding: '10px 14px', marginBottom: '16px', fontSize: '0.9rem',
-            }}>
-              <AlertTriangle size={16} /> {error}
-            </div>
-          )}
-
-          {(() => {
-            const sideNotReady = sideImage && sideCropStep < 2;
-            const btnDisabled = loading || cropStep < 2 || sideNotReady;
-            const btnText = loading
-              ? 'AI 분석 중... (10~30초 소요)'
-              : cropStep < 2
-              ? '정면 신체 영역을 먼저 지정해주세요'
-              : sideNotReady
-              ? '측면 신체 영역을 지정해주세요'
-              : sideImage ? '🚀 측정 시작 (정면 + 측면)' : '🚀 측정 시작';
-            return (
-              <button onClick={handleAnalyze} disabled={btnDisabled} style={{
-                width: '100%', padding: '13px',
-                background: btnDisabled ? '#b0bec5' : 'linear-gradient(135deg, #6e8efb, #a777e3)',
-                color: 'white', border: 'none', borderRadius: '12px',
-                fontSize: '1rem', fontWeight: 600,
-                cursor: btnDisabled ? 'not-allowed' : 'pointer', transition: 'opacity 0.2s',
-              }}>{btnText}</button>
-            );
-          })()}
-        </div>
-
-        {result && (
-          <div style={cardStyle}>
-            <h3 style={{ margin: '0 0 16px', fontSize: '1.2rem', fontWeight: 700 }}>측정 결과</h3>
-
-            {result.warnings.length > 0 && (
-              <div style={{
-                background: '#fff8e1', borderRadius: '10px', padding: '12px 16px',
-                marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '4px',
-              }}>
-                {result.warnings.map((w, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#e67e22', fontSize: '0.88rem' }}>
-                    <AlertTriangle size={14} /> {w}
+                    {rectBody && (
+                      <button
+                        onClick={() => {
+                          setRectBody(null);
+                          setCropStep(1);
+                          redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, null, null);
+                        }}
+                        style={{
+                          padding: '8px 16px', borderRadius: '8px', border: '1px solid #fde68a',
+                          background: '#fffbeb', color: '#d97706', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer'
+                        }}
+                      >
+                        다시 그리기
+                      </button>
+                    )}
                   </div>
-                ))}
-              </div>
-            )}
+                </>
+              )}
 
-            {result.pose_valid && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#27ae60', marginBottom: '16px', fontSize: '0.9rem' }}>
-                <CheckCircle size={16} /> 포즈 감지 성공
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
+                onChange={handleImageChange}
+              />
+            </div>
+
+            {/* 측면 사진 */}
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', fontWeight: 600, marginBottom: '6px', color: '#333' }}>
+                측면 사진
+              </label>
+
+              {sideCropStep === 0 ? (
+                <div
+                  onClick={() => sideFileInputRef.current.click()}
+                  style={{
+                    border: '2px dashed #c0c8e8', borderRadius: '14px',
+                    padding: '40px', textAlign: 'center', cursor: 'pointer',
+                    background: '#f5f7ff', transition: 'border-color 0.2s',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.borderColor = '#6e8efb'}
+                  onMouseLeave={e => e.currentTarget.style.borderColor = '#c0c8e8'}
+                >
+                  <Upload size={32} color="#999" style={{ marginBottom: '8px' }} />
+                  <p style={{ margin: 0, fontSize: '0.9rem', color: '#999' }}>클릭하여 사진 업로드</p>
+                </div>
+              ) : (
+                <>
+                  <div style={{
+                    background: sideCropStep === 1 ? '#e8f0fe' : '#e8fbe8',
+                    borderRadius: '10px', padding: '10px 14px', marginBottom: '10px',
+                    fontSize: '0.88rem', fontWeight: 500,
+                    color: sideCropStep === 1 ? '#1a56db' : '#27ae60',
+                    display: 'flex', alignItems: 'center', gap: '8px',
+                  }}>
+                    {sideCropStep === 1 && '측면 사진에서 신체 영역을 드래그하여 박스를 그려주세요.'}
+                    {sideCropStep === 2 && <><CheckCircle size={16} /> 측면 신체 영역이 지정되었습니다.</>}
+                  </div>
+                  <div style={{
+                    display: 'flex', justifyContent: 'center',
+                    background: '#fafafa', borderRadius: '14px', padding: '8px',
+                    border: '1px solid #e8e8e8',
+                  }}>
+                    <canvas
+                      ref={sideCanvasRef}
+                      style={{ maxWidth: '100%', borderRadius: '10px', cursor: sideCropStep === 1 ? 'crosshair' : 'default', touchAction: 'none' }}
+                      onMouseDown={sideOnDown} onMouseMove={sideOnMove} onMouseUp={sideOnUp}
+                      onTouchStart={sideOnDown} onTouchMove={sideOnMove} onTouchEnd={sideOnUp}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '12px', justifyContent: 'center' }}>
+                    <button onClick={() => sideFileInputRef.current.click()}
+                      style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #c7d2fe', background: '#eef2ff', color: '#4f46e5', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer' }}>
+                      사진 변경
+                    </button>
+                    {sideRectBody && (
+                      <button onClick={() => { setSideRectBody(null); setSideCropStep(1); sideRedrawCanvas(sideCanvasRef.current.width, sideCanvasRef.current.height, null, null); }}
+                        style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #fde68a', background: '#fffbeb', color: '#d97706', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer' }}>
+                        다시 그리기
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+
+              <input
+                ref={sideFileInputRef}
+                type="file" accept="image/*"
+                style={{ display: 'none' }}
+                onChange={handleSideImageChange}
+              />
+            </div>
+
+            {error && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: '8px',
+                color: '#e74c3c', background: '#fdf0f0', borderRadius: '10px',
+                padding: '10px 14px', marginBottom: '16px', fontSize: '0.9rem',
+              }}>
+                <AlertTriangle size={16} /> {error}
               </div>
             )}
 
             {(() => {
-              const CLOTHING_MAP = {
-                top_length: { category: 'top', field: 'length (총장)', color: '#00FF00' },
-                shoulder:   { category: 'top', field: 'shoulder', color: '#FFA500' },
-                chest:      { category: 'top', field: 'chest (폭)', color: '#C800C8' },
-                chest_circumference: { category: 'top', field: '가슴둘레', color: '#E040FB' },
-                waist:      { category: 'top', field: '허리단면', color: '#FF8C00' },
-                waist_circumference: { category: 'top', field: '허리둘레', color: '#FFB300' },
-                sleeve:     { category: 'top', field: '소매길이', color: '#00BFFF' },
-                arm_width:  { category: 'top', field: '팔너비', color: '#FF4500' },
-                arm_angle:  { category: 'top', field: '팔 벌림 각도', color: '#B39DDB' },
-                bottom_length: { category: 'bottom', field: '총장', color: '#FFFF00' },
-                hip:        { category: 'bottom', field: '골반너비', color: '#FF0000' },
-                hip_circumference: { category: 'bottom', field: '엉덩이둘레', color: '#FF5722' },
-                thigh:      { category: 'bottom', field: '허벅지너비', color: '#00FFFF' },
-                thigh_circumference: { category: 'bottom', field: '허벅지둘레', color: '#00ACC1' },
-                rise:       { category: 'bottom', field: 'rise', color: '#FF69B4' },
-                hem:        { category: 'bottom', field: 'hem', color: '#32CD32' },
-                leg_angle:  { category: 'bottom', field: '다리 벌림 각도', color: '#9FA8DA' },
-              };
-              const topItems = result.measurements.filter(m => CLOTHING_MAP[m.key]?.category === 'top');
-              const bottomItems = result.measurements.filter(m => CLOTHING_MAP[m.key]?.category === 'bottom');
-
-              const renderSection = (title, icon, color, items) => (
-                items.length > 0 && (
-                  <div key={title} style={{ marginBottom: '16px' }}>
-                    <div style={{
-                      display: 'flex', alignItems: 'center', gap: '8px',
-                      padding: '10px 14px', background: color, borderRadius: '10px',
-                      marginBottom: '4px', fontWeight: 700, fontSize: '0.95rem', color: '#fff',
-                    }}>
-                      <span>{icon}</span> {title}
-                    </div>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                      <thead>
-                        <tr style={{ background: '#f0f4ff' }}>
-                          <th style={{ padding: '8px 14px', textAlign: 'left', fontWeight: 600, color: '#444', fontSize: '0.85rem' }}>신체 항목</th>
-                          <th style={{ padding: '8px 14px', textAlign: 'center', fontWeight: 600, color: '#444', fontSize: '0.85rem' }}>의류 대응</th>
-                          <th style={{ padding: '8px 14px', textAlign: 'right', fontWeight: 600, color: '#444', fontSize: '0.85rem' }}>측정값</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {items.map((m, i) => (
-                          <tr key={m.key} style={{ borderBottom: '1px solid #f0f0f0', background: i % 2 === 0 ? 'white' : '#fafafa' }}>
-                            <td style={{ padding: '10px 14px', color: '#555' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: CLOTHING_MAP[m.key]?.color || '#ccc', flexShrink: 0 }}></div>
-                                {m.label}
-                              </div>
-                            </td>
-                            <td style={{ padding: '10px 14px', textAlign: 'center', color: '#888', fontSize: '0.82rem' }}>
-                              <span style={{
-                                background: '#f0f4ff', padding: '2px 10px', borderRadius: '8px',
-                                fontWeight: 500, color: '#6e8efb',
-                              }}>
-                                {CLOTHING_MAP[m.key]?.field}
-                              </span>
-                            </td>
-                            <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, color: '#333' }}>
-                              {m.key.includes('angle') ? `${m.value_cm}°` : `${m.value_cm} cm`}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )
-              );
-
+              const sideNotReady = !sideImage || sideCropStep < 2;
+              const btnDisabled = loading || cropStep < 2 || sideNotReady;
+              const btnText = loading
+                ? 'AI 분석 중... (10~30초 소요)'
+                : cropStep < 2
+                ? '정면 신체 영역을 지정해주세요'
+                : sideNotReady
+                ? '측면 신체 영역을 지정해주세요'
+                : '측정 시작';
               return (
-                <div style={{ marginBottom: '24px' }}>
-                  {renderSection('👕 상의 대응 항목', '', 'linear-gradient(135deg, #6e8efb, #a777e3)', topItems)}
-                  {renderSection('👖 하의 대응 항목', '', 'linear-gradient(135deg, #43b89c, #38a0d0)', bottomItems)}
-                </div>
+                <button onClick={handleAnalyze} disabled={btnDisabled} style={{
+                  width: '100%', padding: '13px',
+                  background: btnDisabled ? '#b0bec5' : 'linear-gradient(135deg, #6e8efb, #a777e3)',
+                  color: 'white', border: 'none', borderRadius: '12px',
+                  fontSize: '1rem', fontWeight: 600,
+                  cursor: btnDisabled ? 'not-allowed' : 'pointer', transition: 'opacity 0.2s',
+                }}>{btnText}</button>
               );
             })()}
+          </div>
+        )}
 
-            <div>
-              <p style={{ margin: '0 0 10px', fontWeight: 600, color: '#444', fontSize: '0.95rem' }}>분석 이미지</p>
-
-              {/* 탭 버튼 */}
-              <div style={{ display: 'flex', gap: '6px', marginBottom: '12px', flexWrap: 'wrap' }}>
-                {TAB_LABELS.map(t => (
-                  <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
-                    flex: 1, minWidth: '80px', padding: '8px 0', fontSize: '0.82rem', fontWeight: 600,
-                    borderRadius: '10px', border: 'none', cursor: 'pointer',
-                    background: activeTab === t.key ? 'linear-gradient(135deg, #6e8efb, #a777e3)' : '#f0f0f5',
-                    color: activeTab === t.key ? 'white' : '#666', transition: 'all 0.2s',
-                  }}>{t.label}</button>
-                ))}
-              </div>
-
-              {/* 탭 이미지 */}
-              {(() => {
-                const imgStyle = { maxWidth: '100%', maxHeight: '520px', width: 'auto', display: 'block', margin: '0 auto', borderRadius: '12px', objectFit: 'contain' };
-                if (activeTab === 'debug')
-                  return <img src={`data:image/jpeg;base64,${result.debug_image_base64}`} alt="측정 분석" style={imgStyle} />;
-                if (activeTab === 'gray_debug')
-                  return (
-                    <div style={{ display: 'flex', gap: '16px', overflowX: 'auto', justifyContent: 'center' }}>
-                      <img src={`data:image/jpeg;base64,${result.gray_debug_image_base64}`} alt="실루엣+측정" style={imgStyle} />
-                      {result.side_debug_image_base64 && (
-                        <img src={`data:image/jpeg;base64,${result.side_debug_image_base64}`} alt="측면 분석" style={imgStyle} />
-                      )}
-                    </div>
-                  );
-                if (activeTab === 'extracted')
-                  return <img src={`data:image/jpeg;base64,${result.person_extracted_base64}`} alt="누끼" style={{ ...imgStyle, background: '#f5f5f5' }} />;
-                if (activeTab === 'gray')
-                  return <img src={`data:image/jpeg;base64,${result.gray_mask_base64}`} alt="그레이 실루엣" style={imgStyle} />;
-                return null;
-              })()}
+        {result && (
+          <div style={cardStyle}>
+            <div 
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', marginBottom: isResultExpanded ? '16px' : '0' }}
+              onClick={() => setIsResultExpanded(!isResultExpanded)}
+            >
+              <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700 }}>측정 결과</h3>
+              {isResultExpanded ? <ChevronUp size={20} color="#666" /> : <ChevronDown size={20} color="#666" />}
             </div>
 
-            <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #f0f0f0', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {isResultExpanded && (
+              <>
+                {result.warnings.length > 0 && (
+                  <div style={{
+                    background: '#fff8e1', borderRadius: '10px', padding: '12px 16px',
+                    marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '4px',
+                  }}>
+                    {result.warnings.map((w, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#e67e22', fontSize: '0.88rem' }}>
+                        <AlertTriangle size={14} /> {w}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {result.pose_valid && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#27ae60', marginBottom: '16px', fontSize: '0.9rem' }}>
+                    <CheckCircle size={16} /> 포즈 감지 성공
+                  </div>
+                )}
+
+                {(() => {
+                  const CLOTHING_MAP = {
+                    top_length: { category: 'top', field: 'length (총장)', color: '#00FF00' },
+                    shoulder:   { category: 'top', field: 'shoulder', color: '#FFA500' },
+                    chest:      { category: 'top', field: 'chest (폭)', color: '#C800C8' },
+                    chest_circumference: { category: 'top', field: '가슴둘레', color: '#E040FB' },
+                    waist:      { category: 'top', field: '허리단면', color: '#FF8C00' },
+                    waist_circumference: { category: 'top', field: '허리둘레', color: '#FFB300' },
+                    sleeve:     { category: 'top', field: '소매길이', color: '#00BFFF' },
+                    arm_width:  { category: 'top', field: '팔너비', color: '#FF4500' },
+                    arm_angle:  { category: 'top', field: '팔 벌림 각도', color: '#B39DDB' },
+                    bottom_length: { category: 'bottom', field: '총장', color: '#FFFF00' },
+                    hip:        { category: 'bottom', field: '골반너비', color: '#FF0000' },
+                    hip_circumference: { category: 'bottom', field: '엉덩이둘레', color: '#FF5722' },
+                    thigh:      { category: 'bottom', field: '허벅지너비', color: '#00FFFF' },
+                    thigh_circumference: { category: 'bottom', field: '허벅지둘레', color: '#00ACC1' },
+                    rise:       { category: 'bottom', field: 'rise', color: '#FF69B4' },
+                    hem:        { category: 'bottom', field: 'hem', color: '#32CD32' },
+                    leg_angle:  { category: 'bottom', field: '다리 벌림 각도', color: '#9FA8DA' },
+                  };
+                  const topItems = result.measurements.filter(m => CLOTHING_MAP[m.key]?.category === 'top');
+                  const bottomItems = result.measurements.filter(m => CLOTHING_MAP[m.key]?.category === 'bottom');
+
+                  const renderSection = (title, icon, color, items) => (
+                    items.length > 0 && (
+                      <div key={title} style={{ marginBottom: '16px' }}>
+                        <div style={{
+                          display: 'flex', alignItems: 'center', gap: '8px',
+                          padding: '10px 14px', background: color, borderRadius: '10px',
+                          marginBottom: '4px', fontWeight: 700, fontSize: '0.95rem', color: '#fff',
+                        }}>
+                          <span>{icon}</span> {title}
+                        </div>
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                          <thead>
+                            <tr style={{ background: '#f0f4ff' }}>
+                              <th style={{ padding: '8px 14px', textAlign: 'left', fontWeight: 600, color: '#444', fontSize: '0.85rem' }}>신체 항목</th>
+                              <th style={{ padding: '8px 14px', textAlign: 'center', fontWeight: 600, color: '#444', fontSize: '0.85rem' }}>의류 대응</th>
+                              <th style={{ padding: '8px 14px', textAlign: 'right', fontWeight: 600, color: '#444', fontSize: '0.85rem' }}>측정값</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {items.map((m, i) => (
+                              <tr key={m.key} style={{ borderBottom: '1px solid #f0f0f0', background: i % 2 === 0 ? 'white' : '#fafafa' }}>
+                                <td style={{ padding: '10px 14px', color: '#555' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: CLOTHING_MAP[m.key]?.color || '#ccc', flexShrink: 0 }}></div>
+                                    {m.label}
+                                  </div>
+                                </td>
+                                <td style={{ padding: '10px 14px', textAlign: 'center', color: '#888', fontSize: '0.82rem' }}>
+                                  <span style={{
+                                    background: '#f0f4ff', padding: '2px 10px', borderRadius: '8px',
+                                    fontWeight: 500, color: '#6e8efb',
+                                  }}>
+                                    {CLOTHING_MAP[m.key]?.field}
+                                  </span>
+                                </td>
+                                <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, color: '#333' }}>
+                                  {m.key.includes('angle') ? `${m.value_cm}°` : `${m.value_cm} cm`}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )
+                  );
+
+                  return (
+                    <div style={{ marginBottom: '24px' }}>
+                      {renderSection('상의 대응 항목', '', 'linear-gradient(135deg, #6e8efb, #a777e3)', topItems)}
+                      {renderSection('하의 대응 항목', '', 'linear-gradient(135deg, #43b89c, #38a0d0)', bottomItems)}
+                    </div>
+                  );
+                })()}
+
+                <div>
+                  <p style={{ margin: '0 0 10px', fontWeight: 600, color: '#444', fontSize: '0.95rem' }}>분석 이미지</p>
+
+                  {/* 탭 버튼 */}
+                  <div style={{ display: 'flex', gap: '6px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                    {TAB_LABELS.map(t => (
+                      <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
+                        flex: 1, minWidth: '80px', padding: '8px 0', fontSize: '0.82rem', fontWeight: 600,
+                        borderRadius: '10px', border: 'none', cursor: 'pointer',
+                        background: activeTab === t.key ? 'linear-gradient(135deg, #6e8efb, #a777e3)' : '#f0f0f5',
+                        color: activeTab === t.key ? 'white' : '#666', transition: 'all 0.2s',
+                      }}>{t.label}</button>
+                    ))}
+                  </div>
+
+                  {/* 탭 이미지 */}
+                  {(() => {
+                    const imgStyle = { maxWidth: '100%', maxHeight: '520px', width: 'auto', display: 'block', margin: '0 auto', borderRadius: '12px', objectFit: 'contain' };
+                    if (activeTab === 'debug')
+                      return <img src={`data:image/jpeg;base64,${result.debug_image_base64}`} alt="측정 분석" style={imgStyle} />;
+                    if (activeTab === 'gray_debug')
+                      return (
+                        <div style={{ display: 'flex', gap: '16px', overflowX: 'auto', justifyContent: 'center' }}>
+                          <img src={`data:image/jpeg;base64,${result.gray_debug_image_base64}`} alt="실루엣+측정" style={imgStyle} />
+                          {result.side_debug_image_base64 && (
+                            <img src={`data:image/jpeg;base64,${result.side_debug_image_base64}`} alt="측면 분석" style={imgStyle} />
+                          )}
+                        </div>
+                      );
+                    if (activeTab === 'extracted')
+                      return <img src={`data:image/jpeg;base64,${result.person_extracted_base64}`} alt="누끼" style={{ ...imgStyle, background: '#f5f5f5' }} />;
+                    if (activeTab === 'gray')
+                      return <img src={`data:image/jpeg;base64,${result.gray_mask_base64}`} alt="그레이 실루엣" style={imgStyle} />;
+                    return null;
+                  })()}
+                </div>
+              </>
+            )}
+
+            <div style={{ marginTop: isResultExpanded ? '20px' : '16px', paddingTop: '20px', borderTop: '1px solid #f0f0f0', display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <button
                 onClick={handleSaveAvatar}
                 disabled={avatarSaving || avatarSaved}
@@ -859,7 +862,7 @@ function BodyMeasure() {
                   transition: 'all 0.3s',
                 }}
               >
-                {avatarSaved ? '✅ 아바타 저장 완료!' : avatarSaving ? '저장 중...' : '🧍 아바타로 저장 (피팅룸에서 사용)'}
+                {avatarSaved ? '아바타 저장 완료!' : avatarSaving ? '저장 중...' : '아바타로 저장 (피팅룸에서 사용)'}
               </button>
               {avatarSaved && (
                 <button
@@ -871,9 +874,20 @@ function BodyMeasure() {
                     color: '#6366f1', cursor: 'pointer',
                   }}
                 >
-                  📏 저장된 치수 확인하기
+                  저장된 치수 확인하기
                 </button>
               )}
+              <button
+                onClick={handleResetMeasure}
+                style={{
+                  width: '100%', padding: '13px',
+                  background: 'white', border: '1px solid #e2e8f0',
+                  borderRadius: '12px', fontSize: '1rem', fontWeight: 600,
+                  color: '#64748b', cursor: 'pointer', transition: 'all 0.2s',
+                }}
+              >
+                재측정
+              </button>
             </div>
           </div>
         )}

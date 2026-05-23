@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Star, Image as ImageIcon, X, Send, Loader2, Camera, RefreshCw, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
+import { Star, Image as ImageIcon, X, Send, Loader2, Camera, RefreshCw, RotateCcw, ChevronDown, ChevronUp, Heart, ShoppingBag, AlertTriangle } from 'lucide-react';
 import axios from 'axios';
 import ErrorToast from '../components/ErrorToast';
 import MeasurementWarning, { validateMeasurements } from '../components/MeasurementWarning';
 import './ReviewRegister.css';
+import './ProductList.css';
 
 export default function ReviewRegister() {
   const { productId, reviewId } = useParams();
@@ -24,7 +25,6 @@ export default function ReviewRegister() {
   const [includeSizeReview, setIncludeSizeReview] = useState(false);
   const [selectedSize, setSelectedSize] = useState('');
   
-  // CV Algorithm State
   const [cvStep, setCvStep] = useState(0); 
   const [cvImage, setCvImage] = useState(null);
   const [rectShirt, setRectShirt] = useState(null);
@@ -44,6 +44,24 @@ export default function ReviewRegister() {
   const [scaleFactor, setScaleFactor] = useState(1);
 
   const userEmail = sessionStorage.getItem('userEmail');
+  const username = sessionStorage.getItem('username') || 'User';
+  const isLoggedIn = !!sessionStorage.getItem('token');
+  const [cartCount, setCartCount] = useState(0);
+
+  useEffect(() => {
+    if (!userEmail) return;
+    fetch(`http://localhost:8000/api/cart/${encodeURIComponent(userEmail)}`)
+      .then(r => r.ok ? r.json() : [])
+      .then(items => setCartCount(items.length))
+      .catch(() => {});
+  }, [userEmail]);
+
+  const handleLogout = () => {
+    sessionStorage.removeItem('token');
+    sessionStorage.removeItem('username');
+    sessionStorage.removeItem('userEmail');
+    navigate('/login');
+  };
 
   useEffect(() => {
     if (!userEmail) {
@@ -118,7 +136,6 @@ export default function ReviewRegister() {
     setPreviews((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // --- CV Functions ---
   const handleCvImageUpload = (e) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
@@ -346,7 +363,6 @@ export default function ReviewRegister() {
       setCvLoading(false);
     }
   };
-  // --- End CV Functions ---
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -376,7 +392,6 @@ export default function ReviewRegister() {
 
     setLoading(true);
     try {
-      // 1. Submit General Review
       const formData = new FormData();
       formData.append('rating', rating);
       formData.append('comment', comment);
@@ -398,7 +413,6 @@ export default function ReviewRegister() {
         });
       }
 
-      // 2. Submit Size Review
       if (includeSizeReview && !isEdit && cvResultData) {
         const isTop = product?.category?.name.includes('상의');
         const submitData = new FormData();
@@ -443,100 +457,130 @@ export default function ReviewRegister() {
   const availableSizes = isTopItem ? product.top_sizes : product.bottom_sizes;
 
   return (
-    <div className="review-register-container" style={{ maxWidth: '900px' }}>
-      <div className="review-register-header">
-        <h1>{isEdit ? '리뷰 수정하기' : '리뷰 작성하기'}</h1>
-        <p>상품에 대한 솔직한 의견을 들려주세요!</p>
-      </div>
-
-      <form className="review-form" onSubmit={handleSubmit}>
-        {/* Rating Section */}
-        <div className="form-section">
-          <label className="form-label">평점</label>
-          <div className="star-rating-input">
-            {[1, 2, 3, 4, 5].map((s) => (
-              <Star
-                key={s}
-                size={32}
-                className="star-icon"
-                fill={s <= rating ? "#ffc107" : "none"}
-                color={s <= rating ? "#ffc107" : "#cbd5e1"}
-                onClick={() => setRating(s)}
-              />
-            ))}
-          </div>
+    <div className="product-list-container" style={{ minHeight: '100vh', background: '#f1f5f9' }}>
+      {/* 공통 헤더 */}
+      <header className="product-header">
+        <div className="logo-section" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>
+          <h2>Virtual Fitting</h2>
         </div>
 
-        {/* Comment Section */}
-        <div className="form-section">
-          <label className="form-label">리뷰 내용</label>
-          <textarea
-            className="review-textarea"
-            placeholder="착용감, 색상, 사이즈 등 다른 고객들에게 도움이 될 수 있는 내용을 적어주세요."
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            required
-          />
-        </div>
+        <div className="header-actions">
+          <button className="action-icon-btn" onClick={() => navigate('/mypage/wishes')}>
+            <Heart size={22} />
+          </button>
+          <button className="action-icon-btn" onClick={() => navigate('/mypage/fitting')}>
+            <ShoppingBag size={22} />
+            {cartCount > 0 && <span className="badge">{cartCount}</span>}
+          </button>
 
-        {/* Image Upload Section */}
-        <div className="form-section">
-          <div className="image-upload-wrapper multi">
-            <div 
-              className="upload-button-small"
-              onClick={() => fileInputRef.current.click()}
-            >
-              <Camera size={24} />
-              <span>사진 추가</span>
+          {isLoggedIn ? (
+            <div className="user-profile-wrapper">
+              <div className="user-avatar" title="User Profile">
+                {username.charAt(0).toUpperCase()}
+              </div>
+              <div className="dropdown-menu">
+                <ul>
+                  <li onClick={() => navigate('/mypage')}>마이페이지</li>
+                  <li onClick={handleLogout} className="logout-action">로그아웃</li>
+                </ul>
+              </div>
             </div>
-            
-            <div className="previews-list">
-              {previews.map((src, idx) => (
-                <div key={idx} className="preview-item">
-                  <img src={src} alt={`Preview ${idx}`} className="image-preview-thumb" />
-                  <button
-                    type="button"
-                    className="remove-image-badge"
-                    onClick={() => removeImage(idx)}
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
+          ) : (
+            <button className="login-header-button" onClick={() => navigate('/login')}>로그인</button>
+          )}
+        </div>
+      </header>
+
+      <div className="review-register-container" style={{ maxWidth: '900px', margin: '40px auto' }}>
+        <div className="review-register-header">
+          <h1>{isEdit ? '리뷰 수정하기' : '리뷰 작성하기'}</h1>
+          <p>상품에 대한 솔직한 의견을 들려주세요!</p>
+        </div>
+
+        <form className="review-form" onSubmit={handleSubmit}>
+          <div className="form-section">
+            <label className="form-label">평점</label>
+            <div className="star-rating-input">
+              {[1, 2, 3, 4, 5].map((s) => (
+                <Star
+                  key={s}
+                  size={32}
+                  className="star-icon"
+                  fill={s <= rating ? "#ffc107" : "none"}
+                  color={s <= rating ? "#ffc107" : "#cbd5e1"}
+                  onClick={() => setRating(s)}
+                />
               ))}
             </div>
+          </div>
 
-            <input
-              type="file"
-              ref={fileInputRef}
-              style={{ display: 'none' }}
-              accept="image/*"
-              multiple
-              onChange={handleImageChange}
+          <div className="form-section">
+            <label className="form-label">리뷰 내용</label>
+            <textarea
+              className="review-textarea"
+              placeholder="착용감, 색상, 사이즈 등 다른 고객들에게 도움이 될 수 있는 내용을 적어주세요."
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              required
             />
           </div>
-        </div>
 
-        {/* Size Review Section (Only for new reviews) */}
-        {!isEdit && (
-          <div className="form-section size-review-toggle-section" style={{ marginTop: '20px', padding: '20px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-            <div 
-              className="size-review-toggle-header" 
-              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
-              onClick={() => setIncludeSizeReview(!includeSizeReview)}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <input 
-                  type="checkbox" 
-                  checked={includeSizeReview} 
-                  onChange={() => {}} 
-                  style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                />
-                <label className="form-label" style={{ margin: 0, cursor: 'pointer', color: includeSizeReview ? '#4f46e5' : '#475569' }}>
-                  [선택] AI 실측 사이즈 후기 함께 남기기
-                </label>
+          <div className="form-section">
+            <div className="image-upload-wrapper multi">
+              <div 
+                className="upload-button-small"
+                onClick={() => fileInputRef.current.click()}
+              >
+                <Camera size={24} />
+                <span>사진 추가</span>
               </div>
-              {includeSizeReview ? <ChevronUp size={20} color="#64748b" /> : <ChevronDown size={20} color="#64748b" />}
+              
+              <div className="previews-list">
+                {previews.map((src, idx) => (
+                  <div key={idx} className="preview-item">
+                    <img src={src} alt={`Preview ${idx}`} className="image-preview-thumb" />
+                    <button
+                      type="button"
+                      className="remove-image-badge"
+                      onClick={() => removeImage(idx)}
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <input
+                type="file"
+                ref={fileInputRef}
+                style={{ display: 'none' }}
+                accept="image/*"
+                multiple
+                onChange={handleImageChange}
+              />
             </div>
+          </div>
+
+          {!isEdit && (
+            <div className="form-section size-review-toggle-section" style={{ marginTop: '20px', padding: '20px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+              <div 
+                className="size-review-toggle-header" 
+                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+                onClick={() => setIncludeSizeReview(!includeSizeReview)}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <input 
+                    type="checkbox" 
+                    checked={includeSizeReview} 
+                    onChange={() => {}} 
+                    style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                  />
+                  <label className="form-label" style={{ margin: 0, cursor: 'pointer', color: includeSizeReview ? '#4f46e5' : '#475569' }}>
+                    [선택] AI 실측 사이즈 후기 함께 남기기
+                  </label>
+                </div>
+                {includeSizeReview ? <ChevronUp size={20} color="#64748b" /> : <ChevronDown size={20} color="#64748b" />}
+              </div>
 
             {includeSizeReview && (
               <div className="size-review-content" style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #e2e8f0' }}>
@@ -580,7 +624,7 @@ export default function ReviewRegister() {
                         )}
                       </ul>
                       <div style={{ marginTop: '1rem', padding: '0.75rem', background: '#fef2f2', color: '#dc2626', borderRadius: '8px', fontSize: '0.85rem', display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
-                        <span>⚠️</span>
+                  <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: '2px' }} />
                         <span>의류가 아닌 사진이나 카테고리와 다른 옷을 업로드하면 측정 결과가 부정확합니다.</span>
                       </div>
                     </div>
@@ -673,36 +717,36 @@ export default function ReviewRegister() {
           </div>
         )}
 
-        {/* Actions */}
-        <div className="form-actions">
-          <button
-            type="button"
-            className="btn-cancel"
-            onClick={() => navigate(-1)}
-          >
-            취소
-          </button>
-          <button
-            type="submit"
-            className="btn-submit"
-            disabled={loading || (includeSizeReview && measurementWarnings.length > 0)}
-          >
-            {loading ? (
-              <Loader2 className="animate-spin" size={20} />
-            ) : (
-              <Send size={20} />
-            )}
-            <span>{isEdit ? '리뷰 수정 완료' : (includeSizeReview ? '리뷰 및 사이즈 후기 등록' : '리뷰 등록 완료')}</span>
-          </button>
-        </div>
-      </form>
-      {errorToast && (
-        <ErrorToast
-          errorCode={null}
-          errorDetail={errorToast.detail}
-          onClose={() => setErrorToast(null)}
-        />
-      )}
+          <div className="form-actions">
+            <button
+              type="button"
+              className="btn-cancel"
+              onClick={() => navigate(-1)}
+            >
+              취소
+            </button>
+            <button
+              type="submit"
+              className="btn-submit"
+              disabled={loading || (includeSizeReview && measurementWarnings.length > 0)}
+            >
+              {loading ? (
+                <Loader2 className="animate-spin" size={20} />
+              ) : (
+                <Send size={20} />
+              )}
+              <span>{isEdit ? '리뷰 수정 완료' : (includeSizeReview ? '리뷰 및 사이즈 후기 등록' : '리뷰 등록 완료')}</span>
+            </button>
+          </div>
+        </form>
+        {errorToast && (
+          <ErrorToast
+            errorCode={null}
+            errorDetail={errorToast.detail}
+            onClose={() => setErrorToast(null)}
+          />
+        )}
+      </div>
     </div>
   );
 }
