@@ -33,6 +33,8 @@ function VirtualFitting() {
   const username = sessionStorage.getItem('username') || 'User';
   const isLoggedIn = !!sessionStorage.getItem('token');
   const [cartCount, setCartCount] = useState(0);
+  const [cartItems, setCartItems] = useState([]);
+  const [cartOpen, setCartOpen] = useState(false);
 
   const canvasRef = useRef(null);
   const userEmail = sessionStorage.getItem('userEmail');
@@ -114,13 +116,25 @@ function VirtualFitting() {
     fetchData();
   }, [id]);
 
-  useEffect(() => {
-    if (!userEmail) return;
-    fetch(`http://localhost:8000/api/cart/${encodeURIComponent(userEmail)}`)
+  const refreshCart = useCallback(() => {
+    const email = sessionStorage.getItem('userEmail');
+    if (!email) return;
+    fetch(`http://localhost:8000/api/cart/${encodeURIComponent(email)}`)
       .then(r => r.ok ? r.json() : [])
-      .then(items => setCartCount(items.length))
+      .then(items => { setCartItems(items); setCartCount(items.length); })
       .catch(() => {});
-  }, [userEmail]);
+  }, []);
+
+  const removeCartItem = async (itemId) => {
+    const email = sessionStorage.getItem('userEmail');
+    if (!email) return;
+    await fetch(`http://localhost:8000/api/cart/${itemId}?user_email=${encodeURIComponent(email)}`, { method: 'DELETE' });
+    refreshCart();
+  };
+
+  useEffect(() => {
+    refreshCart();
+  }, [refreshCart]);
 
   const handleLogout = () => {
     sessionStorage.removeItem('token');
@@ -589,7 +603,7 @@ function VirtualFitting() {
       } else if (ease < 18) {
         statusText = `루즈 핏 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#3b82f6'; percent = 75;
       } else {
-        statusText = `오버사이즈 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#8b5cf6'; percent = 95;
+        statusText = `오버 핏 (${ease > 0 ? '+' : ''}${ease.toFixed(1)}cm)`; color = '#8b5cf6'; percent = 95;
       }
     } else {
       if (!userFlat) return null;
@@ -845,10 +859,51 @@ ${productDetailsText}
           <button className="action-icon-btn" onClick={() => navigate('/mypage/wishes')}>
             <Heart size={22} />
           </button>
-          <button className="action-icon-btn" onClick={() => navigate('/mypage/fitting')}>
-            <ShoppingBag size={22} />
-            {cartCount > 0 && <span className="badge">{cartCount}</span>}
-          </button>
+          <div style={{ position: 'relative' }}>
+            <button className="action-icon-btn" onClick={() => setCartOpen(o => !o)}>
+              <ShoppingBag size={22} />
+              {cartCount > 0 && <span className="badge">{cartCount}</span>}
+            </button>
+            {cartOpen && (
+              <>
+                <div style={{ position: 'fixed', inset: 0, zIndex: 98 }} onClick={() => setCartOpen(false)} />
+                <div style={{
+                  position: 'absolute', top: 'calc(100% + 8px)', right: 0,
+                  width: '300px', background: 'white', borderRadius: '16px',
+                  boxShadow: '0 8px 32px rgba(0,0,0,0.14)', border: '1px solid #e2e8f0',
+                  zIndex: 99, overflow: 'hidden',
+                }}>
+                  <div style={{ padding: '14px 16px', borderBottom: '1px solid #f1f5f9', fontWeight: 700, fontSize: '0.95rem', color: '#1e293b' }}>
+                    장바구니 {cartCount > 0 ? `(${cartCount})` : ''}
+                  </div>
+                  {cartItems.length === 0 ? (
+                    <div style={{ padding: '24px', textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem' }}>장바구니가 비어있습니다</div>
+                  ) : (
+                    <div style={{ maxHeight: '260px', overflowY: 'auto' }}>
+                      {cartItems.map(item => (
+                        <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 16px', borderBottom: '1px solid #f8fafc' }}>
+                          <img src={`http://localhost:8000${item.product.image_url}`} alt={item.product.name}
+                            style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '8px', flexShrink: 0 }} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ margin: 0, fontSize: '0.8rem', fontWeight: 600, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.product.name}</p>
+                            {item.size_name && <span style={{ fontSize: '0.72rem', color: '#6366f1' }}>{item.size_name}</span>}
+                          </div>
+                          <button onClick={() => removeCartItem(item.id)}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', fontSize: '1rem', padding: '2px 4px', flexShrink: 0 }}>✕</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div style={{ padding: '12px 16px' }}>
+                    <button onClick={() => { setCartOpen(false); navigate('/mypage/fitting'); }}
+                      style={{ width: '100%', padding: '10px', borderRadius: '10px', border: 'none', background: 'linear-gradient(135deg, #6366f1, #a855f7)', color: 'white', fontWeight: 700, fontSize: '0.88rem', cursor: 'pointer' }}>
+                  가상 피팅룸에서 착용해보기
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
 
           {isLoggedIn ? (
             <div className="user-profile-wrapper">
@@ -928,48 +983,66 @@ ${productDetailsText}
                   <p style={{ margin: '6px 0 0', fontSize: '0.72rem', color: '#94a3b8', textAlign: 'center' }}>
                     의류를 드래그해서 이동할 수 있습니다 (더블클릭 시 복귀)
                   </p>
-                </div>
 
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '20px', minWidth: '280px', maxWidth: '340px' }}>
-                  
                   {getSizes().length > 0 && (
-                    <div style={{ width: '100%' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '10px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <p style={{ margin: 0, fontSize: '0.78rem', color: '#64748b', fontWeight: 600 }}>사이즈 선택</p>
-                          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                            <div
-                              onClick={() => setShowDimLines(!showDimLines)}
-                              style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
-                            >
-                              <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600, userSelect: 'none' }}>
-                                치수선 표시
-                              </span>
-                              <div style={{ width: '36px', height: '20px', backgroundColor: showDimLines ? '#6366f1' : '#e2e8f0', borderRadius: '20px', position: 'relative', transition: 'background-color 0.2s ease-in-out', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.1)' }}>
-                                <div style={{
-                                  position: 'absolute', top: '2px', left: showDimLines ? '18px' : '2px',
-                                  width: '16px', height: '16px', backgroundColor: 'white',
-                                  borderRadius: '50%', transition: 'left 0.2s ease-in-out', boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
-                                }} />
-                              </div>
-                            </div>
+                    <div style={{ width: '100%', marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px', padding: '0 10px', boxSizing: 'border-box' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                        <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>사이즈 선택</p>
+                        <div
+                          onClick={() => setShowDimLines(!showDimLines)}
+                          style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+                        >
+                          <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600, userSelect: 'none' }}>
+                            치수선 표시
+                          </span>
+                          <div style={{ width: '36px', height: '20px', backgroundColor: showDimLines ? '#6366f1' : '#e2e8f0', borderRadius: '20px', position: 'relative', transition: 'background-color 0.2s ease-in-out', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.1)' }}>
+                            <div style={{
+                              position: 'absolute', top: '2px', left: showDimLines ? '18px' : '2px',
+                              width: '16px', height: '16px', backgroundColor: 'white',
+                              borderRadius: '50%', transition: 'left 0.2s ease-in-out', boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+                            }} />
                           </div>
                         </div>
                       </div>
-                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-start' }}>
                         {getSizes().map(s => (
                           <button
                             key={s.size_name}
                             onClick={() => setSelectedSize(s)}
                             style={{
-                              padding: '5px 13px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 600,
+                              padding: '6px 16px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 600,
                               border: `1.5px solid ${selectedSize?.size_name === s.size_name ? '#6366f1' : '#e2e8f0'}`,
                               background: selectedSize?.size_name === s.size_name ? '#eef2ff' : 'white',
                               color: selectedSize?.size_name === s.size_name ? '#6366f1' : '#64748b',
-                              cursor: 'pointer',
+                              cursor: 'pointer', transition: 'all 0.2s'
                             }}
                           >{s.size_name}</button>
                         ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '20px', minWidth: '280px', maxWidth: '340px' }}>
+                  
+                  {selectedSize && avatar?.measurements && (
+                    <div style={{ width: '100%', background: '#ffffff', borderRadius: '14px', padding: '16px', boxShadow: '0 4px 14px rgba(0,0,0,0.03)', border: '1px solid #f1f5f9' }}>
+                      <p style={{ margin: '0 0 12px', fontSize: '0.85rem', fontWeight: 800, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Info size={16} color="#6366f1" /> 핏 가이드 지표
+                      </p>
+                      <div style={{ position: 'relative', height: '8px', borderRadius: '4px', display: 'flex', overflow: 'hidden', marginBottom: '8px' }}>
+                        <div style={{ flex: 1, background: '#ef4444' }} title="타이트" />
+                        <div style={{ flex: 1, background: '#84cc16' }} title="슬림" />
+                        <div style={{ flex: 1, background: '#22c55e' }} title="정핏" />
+                        <div style={{ flex: 1, background: '#3b82f6' }} title="루즈" />
+                        <div style={{ flex: 1, background: '#8b5cf6' }} title="오버" />
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: '#64748b', fontWeight: 600 }}>
+                        <span style={{ width: '20%', textAlign: 'center' }}>타이트</span>
+                        <span style={{ width: '20%', textAlign: 'center' }}>슬림</span>
+                        <span style={{ width: '20%', textAlign: 'center' }}>레귤러</span>
+                        <span style={{ width: '20%', textAlign: 'center' }}>루즈</span>
+                        <span style={{ width: '20%', textAlign: 'center' }}>오버</span>
                       </div>
                     </div>
                   )}
