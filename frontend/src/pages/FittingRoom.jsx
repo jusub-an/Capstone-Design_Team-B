@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Eye, EyeOff, Trash2, User, Shirt, ChevronDown, ChevronUp, RotateCcw, Heart, ShoppingBag, ShoppingCart, Layers } from 'lucide-react';
 import './ProductList.css';
+import FittingRoomGuide from '../components/FittingRoomGuide';
 
 const BASE = 'http://localhost:8000';
 
@@ -321,6 +322,7 @@ function FittingRoom() {
   const [loadingCart, setLoadingCart] = useState(true);
   const [preparingLayer, setPreparingLayer] = useState(null); // product_id being prepared
   const [cartOpen, setCartOpen] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
 
   useEffect(() => {
     if (!userEmail) { setLoadingAvatar(false); return; }
@@ -889,6 +891,30 @@ function FittingRoom() {
           <div style={{ padding: '16px', borderBottom: '1px solid #f1f5f9' }}>
             <h3 style={{ margin: '0 0 12px', fontSize: '0.95rem', fontWeight: 700, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <ShoppingCart size={16} color="#6366f1" /> 장바구니 상품
+              <div style={{ marginLeft: 'auto', position: 'relative' }}>
+                <button
+                  onClick={() => setShowGuide(true)}
+                  title="사용방법"
+                  style={{
+                    width: '22px', height: '22px', borderRadius: '50%',
+                    border: '1.5px solid #c7d2fe', background: '#eef2ff',
+                    color: '#6366f1', fontWeight: 800, fontSize: '0.75rem',
+                    cursor: 'pointer', display: 'flex', alignItems: 'center',
+                    justifyContent: 'center', lineHeight: 1,
+                    transition: 'all 0.2s',
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.background = '#6366f1';
+                    e.currentTarget.style.color = 'white';
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.background = '#eef2ff';
+                    e.currentTarget.style.color = '#6366f1';
+                  }}
+                >
+                  ?
+                </button>
+              </div>
             </h3>
             {loadingCart ? (
               <p style={{ color: '#94a3b8', fontSize: '0.85rem' }}>불러오는 중...</p>
@@ -1000,6 +1026,7 @@ function FittingRoom() {
           </div>
         </div>
       </div>
+      {showGuide && <FittingRoomGuide onClose={() => setShowGuide(false)} />}
     </div>
   );
 }

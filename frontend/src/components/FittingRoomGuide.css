@@ -1,0 +1,447 @@
+/* ═══════════════════════════════
+   FittingRoomGuide — 피팅룸 가이드 팝업
+   ═══════════════════════════════ */
+
+.frg-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgba(15, 23, 42, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  backdrop-filter: blur(4px);
+}
+
+.frg-modal {
+  background: white;
+  border-radius: 24px;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 단계 점 */
+.frg-dots {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  padding: 20px 20px 0;
+}
+
+.frg-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e2e8f0;
+  cursor: pointer;
+  transition: all 0.25s;
+}
+
+.frg-dot-active {
+  background: #6366f1;
+  width: 22px;
+  border-radius: 4px;
+}
+
+/* 애니메이션 영역 */
+.frg-anim-area {
+  height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f8fafc;
+  margin: 16px 20px 0;
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+  animation: frgFadeIn 0.3s ease;
+}
+
+@keyframes frgFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.frg-anim-scene {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+/* 텍스트 */
+.frg-content {
+  padding: 20px 24px 0;
+  text-align: center;
+}
+
+.frg-title {
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #1e293b;
+  letter-spacing: -0.3px;
+}
+
+.frg-desc {
+  margin: 0;
+  font-size: 0.84rem;
+  color: #64748b;
+  line-height: 1.6;
+  word-break: keep-all;
+}
+
+/* 네비게이션 */
+.frg-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 24px;
+}
+
+.frg-step-count {
+  font-size: 0.82rem;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.frg-nav-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 2px solid #6366f1;
+  background: white;
+  color: #6366f1;
+  font-size: 1.4rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  line-height: 1;
+}
+
+.frg-nav-btn:hover:not(:disabled) {
+  background: #6366f1;
+  color: white;
+}
+
+.frg-nav-btn:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+.frg-start-btn {
+  padding: 11px 24px;
+  border-radius: 50px;
+  border: none;
+  background: linear-gradient(135deg, #6366f1, #a855f7);
+  color: white;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
+  transition: opacity 0.2s;
+}
+
+.frg-start-btn:hover { opacity: 0.9; }
+
+/* ══════════════════════
+   Step 1 — 아바타
+   ══════════════════════ */
+
+.frg-canvas-frame {
+  width: 110px;
+  height: 148px;
+  border: 2px solid #c7d2fe;
+  border-radius: 14px;
+  background: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.12);
+}
+
+.frg-human-float {
+  width: 52px;
+  height: 110px;
+  animation: frgFloat 2.5s ease-in-out infinite;
+}
+
+@keyframes frgFloat {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-6px); }
+}
+
+.frg-avatar-pulse {
+  position: absolute;
+  inset: -8px;
+  border-radius: 20px;
+  border: 2px solid rgba(99, 102, 241, 0.4);
+  animation: frgAvatarPulse 2s ease-out infinite;
+}
+
+@keyframes frgAvatarPulse {
+  0%   { opacity: 0.8; transform: scale(1); }
+  100% { opacity: 0;   transform: scale(1.12); }
+}
+
+/* ══════════════════════
+   Step 2 — 착용
+   ══════════════════════ */
+
+.frg-wear-scene {
+  gap: 0;
+}
+
+.frg-cart-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: white;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 10px 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  animation: frgCartPop 3s ease-in-out infinite;
+}
+
+.frg-shirt-icon {
+  line-height: 0;
+}
+
+.frg-wear-btn {
+  background: #6366f1;
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 6px;
+  animation: frgBtnClick 3s ease-in-out infinite;
+}
+
+@keyframes frgBtnClick {
+  0%, 55%, 100% { transform: scale(1); }
+  60%           { transform: scale(0.88); }
+  65%           { transform: scale(1.05); }
+}
+
+.frg-arrow-fly {
+  font-size: 1.4rem;
+  color: #6366f1;
+  margin: 0 10px;
+  animation: frgArrow 3s ease-in-out infinite;
+}
+
+@keyframes frgArrow {
+  0%, 50%  { opacity: 0.3; transform: translateX(-4px); }
+  65%, 85% { opacity: 1;   transform: translateX(4px); }
+  100%     { opacity: 0.3; transform: translateX(-4px); }
+}
+
+.frg-mini-canvas {
+  width: 72px;
+  height: 100px;
+  border: 2px solid #c7d2fe;
+  border-radius: 10px;
+  background: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.frg-shirt-landing {
+  animation: frgLanding 3s ease-in-out infinite;
+}
+
+@keyframes frgLanding {
+  0%, 55%  { opacity: 0; transform: scale(0.6) translateY(-8px); }
+  75%, 90% { opacity: 1; transform: scale(1) translateY(0); }
+  100%     { opacity: 0; transform: scale(0.6) translateY(-8px); }
+}
+
+/* ══════════════════════
+   Step 3 — 드래그
+   ══════════════════════ */
+
+.frg-drag-box {
+  width: 200px;
+  height: 130px;
+  background: white;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 12px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+}
+
+.frg-drag-clothing {
+  position: absolute;
+  width: 60px;
+  height: 76px;
+  background: rgba(99, 102, 241, 0.18);
+  border: 2px solid #6366f1;
+  border-radius: 6px;
+  animation: frgDragMove 3s ease-in-out infinite;
+}
+
+@keyframes frgDragMove {
+  0%        { top: 27px; left: 20px; }
+  15%       { top: 27px; left: 20px; }
+  55%       { top: 22px; left: 110px; }
+  80%       { top: 22px; left: 110px; }
+  100%      { top: 27px; left: 20px; }
+}
+
+.frg-drag-cursor {
+  position: absolute;
+  filter: drop-shadow(2px 3px 4px rgba(0,0,0,0.4));
+  animation: frgDragCursor 3s ease-in-out infinite;
+}
+
+@keyframes frgDragCursor {
+  0%        { top: 36px; left: 40px; opacity: 0; }
+  10%       { top: 36px; left: 40px; opacity: 1; }
+  55%       { top: 32px; left: 130px; }
+  80%       { top: 32px; left: 130px; opacity: 1; }
+  90%       { opacity: 0; }
+  100%      { top: 36px; left: 40px; opacity: 0; }
+}
+
+/* ══════════════════════
+   Step 4 — 레이어
+   ══════════════════════ */
+
+.frg-layer-stack {
+  position: relative;
+  width: 200px;
+  height: 100px;
+}
+
+.frg-layer-card {
+  position: absolute;
+  width: 180px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1.5px solid;
+}
+
+.frg-layer-card span { pointer-events: none; }
+
+.frg-layer-1 {
+  background: #f5f3ff; border-color: #c4b5fd; color: #5b21b6;
+  top: 0; left: 10px;
+  animation: frgLayer1 3.5s ease-in-out infinite;
+}
+.frg-layer-2 {
+  background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8;
+  top: 32px; left: 10px;
+  animation: frgLayer2 3.5s ease-in-out infinite;
+}
+.frg-layer-3 {
+  background: #f0fdf4; border-color: #bbf7d0; color: #166534;
+  top: 64px; left: 10px;
+  animation: frgLayer3 3.5s ease-in-out infinite;
+}
+
+@keyframes frgLayer1 {
+  0%, 15% { opacity: 0; transform: translateX(20px); }
+  30%, 85% { opacity: 1; transform: translateX(0); }
+  100% { opacity: 0; transform: translateX(20px); }
+}
+@keyframes frgLayer2 {
+  0%, 30% { opacity: 0; transform: translateX(20px); }
+  45%, 85% { opacity: 1; transform: translateX(0); }
+  100% { opacity: 0; transform: translateX(20px); }
+}
+@keyframes frgLayer3 {
+  0%, 45% { opacity: 0; transform: translateX(20px); }
+  60%, 85% { opacity: 1; transform: translateX(0); }
+  100% { opacity: 0; transform: translateX(20px); }
+}
+
+/* ══════════════════════
+   Step 5 — 치수선
+   ══════════════════════ */
+
+.frg-dim-box {
+  position: relative;
+  width: 140px;
+  height: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.frg-dim-line {
+  position: absolute;
+  height: 1.5px;
+  background: #ef4444;
+  border-radius: 2px;
+  animation: frgDimBlink 2s ease-in-out infinite;
+}
+
+.frg-dim-line::before,
+.frg-dim-line::after {
+  content: '';
+  position: absolute;
+  top: -3px;
+  width: 1.5px;
+  height: 7px;
+  background: #ef4444;
+}
+.frg-dim-line::before { left: 0; }
+.frg-dim-line::after  { right: 0; }
+
+.frg-dim-shoulder { width: 55px; top: 48px; left: 42px; animation-delay: 0s; }
+.frg-dim-chest    { width: 37px; top: 72px; left: 52px; animation-delay: 0.4s; }
+.frg-dim-length   { width: 1.5px; height: 48px; top: 48px; left: 92px; background: #ef4444; animation: frgDimBlink 2s ease-in-out 0.8s infinite; }
+
+.frg-dim-length::before,
+.frg-dim-length::after {
+  content: '';
+  position: absolute;
+  left: -3px;
+  width: 7px;
+  height: 1.5px;
+  background: #ef4444;
+}
+.frg-dim-length::before { top: 0; }
+.frg-dim-length::after  { bottom: 0; }
+
+.frg-dim-label {
+  position: absolute;
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: #ef4444;
+  background: rgba(254, 242, 242, 0.92);
+  border: 1px solid #fca5a5;
+  border-radius: 4px;
+  padding: 1px 5px;
+  animation: frgDimBlink 2s ease-in-out infinite;
+}
+
+.frg-dim-label-s { top: 37px; left: 38px; animation-delay: 0s; }
+.frg-dim-label-c { top: 61px; left: 48px; animation-delay: 0.4s; }
+
+@keyframes frgDimBlink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.15; }
+}

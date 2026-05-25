@@ -194,7 +194,10 @@ function AvatarManage() {
                 신체 측정을 진행한 후 아바타를 저장해 주세요
               </p>
               <button
-                onClick={() => navigate('/mypage/body-measure')}
+                onClick={() => {
+                  localStorage.removeItem('bodyMeasureGuideShown');
+                  navigate('/mypage/body-measure');
+                }}
                 style={{
                   padding: '11px 28px', borderRadius: '12px', border: 'none',
                   background: 'linear-gradient(135deg, #6366f1, #a855f7)',
@@ -311,7 +314,10 @@ function AvatarManage() {
   
               {/* ── Re-measure button ── */}
               <button
-                onClick={() => navigate('/mypage/body-measure')}
+                onClick={() => {
+                  localStorage.removeItem('bodyMeasureGuideShown');
+                  navigate('/mypage/body-measure');
+                }}
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                   width: '100%', padding: '14px', borderRadius: '14px', border: 'none',

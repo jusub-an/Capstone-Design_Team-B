@@ -1,9 +1,11 @@
 import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { ChevronLeft, ChevronDown, ChevronUp, Upload, Ruler, AlertTriangle, CheckCircle, Heart, ShoppingBag } from 'lucide-react';
+import { ChevronLeft, ChevronDown, ChevronUp, Upload, Ruler, AlertTriangle, CheckCircle, Heart, ShoppingBag, Camera, User, Sun, Layers, Info } from 'lucide-react';
 import './MyReviews.css';
 import './ProductList.css';
+import '../components/MeasurementGuide.css';
+import BodyDragAnimation from '../components/BodyDragAnimation';
 
 const TAB_LABELS = [
   { key: 'debug',      label: '측정 분석' },
@@ -40,6 +42,17 @@ function BodyMeasure() {
   const [cartItems, setCartItems] = useState([]);
   const [cartCount, setCartCount] = useState(0);
   const [isResultExpanded, setIsResultExpanded] = useState(false);
+  const [showGuideModal, setShowGuideModal] = useState(false);
+
+  useEffect(() => {
+    const seen = localStorage.getItem('bodyMeasureGuideShown');
+    if (!seen) setShowGuideModal(true);
+  }, []);
+
+  const handleCloseGuideModal = () => {
+    localStorage.setItem('bodyMeasureGuideShown', 'true');
+    setShowGuideModal(false);
+  };
 
   const canvasRef = useRef(null);
   const imgRef = useRef(null);
@@ -472,6 +485,93 @@ function BodyMeasure() {
         </div>
       </header>
 
+      {/* ── 아바타 생성 안내 팝업 ── */}
+      {showGuideModal && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 200,
+          background: 'rgba(15, 23, 42, 0.55)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: '16px', backdropFilter: 'blur(4px)',
+        }}>
+          <div style={{
+            background: 'white', borderRadius: '20px', width: '100%', maxWidth: '420px',
+            maxHeight: '90vh', overflowY: 'auto',
+            boxShadow: '0 24px 64px rgba(0,0,0,0.18)',
+          }}>
+            {/* 헤더 — mg-panel-header 스타일 인용 */}
+            <div style={{
+              padding: '18px 20px',
+              borderBottom: '1px solid #e2e8f0',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            }}>
+              <span className="mg-panel-title" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <User size={18} color="#6366f1" />
+                아바타 생성 전 확인사항
+              </span>
+              <button className="mg-panel-close" onClick={handleCloseGuideModal}>✕</button>
+            </div>
+
+            <div style={{ padding: '18px 20px 20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {/* 안내사항 섹션 */}
+              <div className="mg-section">
+                <div className="mg-section-title">
+                  <span className="mg-badge mg-badge-common">안내</span>
+                  촬영 준비 사항
+                </div>
+                <ul className="mg-list">
+                  {[
+                    { icon: <Camera size={15} />, text: '정면 사진과 측면(옆모습) 사진 2장이 모두 필요합니다.' },
+                    { icon: <User size={15} />, text: '몸에 딱 맞는 얇은 옷을 입고 차렷 자세로 서 주신 뒤 양팔을 몸에서 살짝 벌려주세요.' },
+                    { icon: <Sun size={15} />, text: '밝고 배경이 단순한 곳에서 촬영하면 더 정확합니다.' },
+                    { icon: <Layers size={15} />, text: '전신이 모두 화면에 들어오도록 충분한 거리에서 찍어주세요.' },
+                  ].map((item, i) => (
+                    <li key={i} className="mg-item">
+                      <span className="mg-item-icon" style={{ color: '#6366f1' }}>{item.icon}</span>
+                      <span className="mg-item-text">{item.text}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* 주의사항 섹션 */}
+              <div className="mg-section">
+                <div className="mg-section-title">
+                  <span className="mg-badge" style={{ background: '#fef3c7', color: '#d97706' }}>주의</span>
+                  측정 전 주의사항
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {[
+                    '헐렁한 옷, 치마, 원피스는 신체 윤곽이 가려져 측정 정확도가 낮아집니다.',
+                    '사진이 어둡거나 흔들리면 AI 분석에 실패할 수 있습니다.',
+                    'AI 기반 측정이므로 실제 수치와 약간의 오차가 있을 수 있습니다.',
+                    '측정 결과는 가상 피팅 참고용이며, 절대 수치로 사용하지 마세요.',
+                    '사용하실 사진은 최대한 왜곡이 없는 사진을 사용하셔야 됩니다.',
+                  ].map((text, i) => (
+                    <div key={i} className="mg-warn" style={{ marginBottom: 0 }}>
+                      <AlertTriangle size={14} className="mg-warn-icon" style={{ marginTop: '2px', flexShrink: 0 }} />
+                      <span className="mg-warn-text">{text}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <button
+                onClick={handleCloseGuideModal}
+                style={{
+                  width: '100%', padding: '13px', borderRadius: '12px', border: 'none',
+                  background: 'linear-gradient(135deg, #6366f1, #a855f7)',
+                  color: 'white', fontWeight: 700, fontSize: '0.95rem', cursor: 'pointer',
+                  boxShadow: '0 4px 14px rgba(99,102,241,0.3)',
+                  marginTop: '4px',
+                }}
+              >
+                확인했습니다, 시작하기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="my-reviews-container">
         <div className="my-reviews-header" style={{ maxWidth: '760px', margin: '0 auto', padding: '30px 20px 0', textAlign: 'left', boxSizing: 'border-box' }}>
           <button onClick={() => navigate('/mypage')} className="back-btn" style={{ marginBottom: '16px' }}>
@@ -537,10 +637,19 @@ function BodyMeasure() {
                     borderRadius: '10px', padding: '10px 14px', marginBottom: '10px',
                     fontSize: '0.88rem', fontWeight: 500,
                     color: cropStep === 1 ? '#1a56db' : '#27ae60',
-                    display: 'flex', alignItems: 'center', gap: '8px',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
                   }}>
-                    {cropStep === 1 && '사진에서 신체 영역을 드래그하여 박스를 그려주세요.'}
-                    {cropStep === 2 && <><CheckCircle size={16} /> 신체 영역이 지정되었습니다.</>}
+                    {cropStep === 1 && (
+                      <>
+                        <span style={{ alignSelf: 'flex-start' }}>사진에서 신체 영역을 드래그하여 박스를 그려주세요.</span>
+                        <BodyDragAnimation />
+                      </>
+                    )}
+                    {cropStep === 2 && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <CheckCircle size={16} /> 신체 영역이 지정되었습니다.
+                      </div>
+                    )}
                   </div>
 
                   <div style={{

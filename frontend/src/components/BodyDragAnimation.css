@@ -1,0 +1,70 @@
+/* ── BodyDragAnimation ── */
+
+.body-anim-wrapper {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0 4px;
+}
+
+.body-anim-box {
+  width: 140px;
+  height: 190px;
+  position: relative;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+}
+
+/* Human figure SVG — centered */
+.body-figure-svg {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 58px;
+  height: 123px;
+  z-index: 1;
+}
+
+/* Drag rectangle */
+.body-drag-rect {
+  position: absolute;
+  border: 2px dashed rgba(99, 102, 241, 0.65);
+  background: rgba(99, 102, 241, 0.07);
+  border-radius: 4px;
+  z-index: 5;
+  animation: bodyDragRect 3.5s infinite cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Cursor */
+.body-cursor-svg {
+  position: absolute;
+  z-index: 10;
+  filter: drop-shadow(2px 4px 6px rgba(0, 0, 0, 0.5));
+  animation: bodyDragCursor 3.5s infinite cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/*
+  Box: 140 × 190 px
+  Figure: 60 × 128 px, centered → left: 40, top: 31 → spans x:40-100, y:31-159
+  Drag rect starts at (32, 22) with ~8px padding, grows to w:76 h:144 → reaches (108, 166)
+  Cursor tip: same start → end
+*/
+
+@keyframes bodyDragCursor {
+  0%   { top: 22px; left: 32px; opacity: 0; transform: scale(1.2); }
+  10%  { top: 22px; left: 32px; opacity: 1; transform: scale(1); }
+  25%  { top: 30px; left: 40px; }
+  70%  { top: 166px; left: 108px; }
+  85%  { top: 166px; left: 108px; opacity: 1; transform: scale(1); }
+  100% { top: 166px; left: 108px; opacity: 0; transform: scale(1.2); }
+}
+
+@keyframes bodyDragRect {
+  0%, 25%  { top: 30px; left: 40px; width: 0; height: 0; opacity: 0; }
+  26%      { opacity: 1; }
+  70%, 85% { top: 30px; left: 40px; width: 68px; height: 136px; opacity: 1; }
+  100%     { top: 30px; left: 40px; width: 68px; height: 136px; opacity: 0; }
+}
