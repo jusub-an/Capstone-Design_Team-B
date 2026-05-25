@@ -275,10 +275,6 @@ function ProductList() {
                     className="product-image"
                     onError={(e) => { e.target.src = 'https://via.placeholder.com/400x500?text=No+Image'; }}
                   />
-                  <div className="card-badges">
-                    {product.id % 5 === 0 && <span className="badge-new">NEW</span>}
-                    {product.wish_count > 10 && <span className="badge-hot">HOT</span>}
-                  </div>
                   <button
                     className={`wish-button ${product.is_wished ? 'wished' : ''}`}
                     onClick={(e) => handleToggleWish(e, product.id)}
