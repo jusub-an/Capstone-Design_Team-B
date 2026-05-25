@@ -6,6 +6,7 @@ import './ProductList.css';
 import MeasurementGuide from '../components/MeasurementGuide';
 import ErrorToast from '../components/ErrorToast';
 import MeasurementWarning, { validateMeasurements } from '../components/MeasurementWarning';
+import StepGuideAnimation from '../components/StepGuideAnimation';
 
 function ProductRegister() {
   const navigate = useNavigate();
@@ -53,6 +54,7 @@ function ProductRegister() {
   
   const canvasRef = useRef(null);
   const imgRef = useRef(null);
+  const abortControllerRef = useRef(null);
   const [scaleFactor, setScaleFactor] = useState(1);
 
   const refreshCart = () => {
@@ -426,9 +428,15 @@ function ProductRegister() {
         reqFormData.append('shoulder_y2', (shoulderPts[1].y / scaleFactor).toString());
       }
 
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      abortControllerRef.current = new AbortController();
+
       const response = await fetch('http://localhost:8000/api/measure/clothing', {
         method: 'POST',
         body: reqFormData,
+        signal: abortControllerRef.current.signal
       });
 
       if (response.ok) {
@@ -448,6 +456,10 @@ function ProductRegister() {
         setErrorToast({ code: matchedCode || null, detail: errMsg });
       }
     } catch (error) {
+      if (error.name === 'AbortError') {
+        console.log('Analysis aborted by user');
+        return;
+      }
       console.error(error);
       setErrorToast({ code: null, detail: '네트워크 오류가 발생했습니다. 서버 연결 상태를 확인해주세요.' });
     } finally {
@@ -482,11 +494,15 @@ function ProductRegister() {
       }
       return s;
     }));
-    setShowCvModal(false);
+    handleCloseCvModal();
     alert('치수가 적용되었습니다.');
   };
 
   const handleCloseCvModal = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    setCvLoading(false);
     setShowCvModal(false);
     setCvStep(0);
     setCvImage(null);
@@ -595,7 +611,7 @@ function ProductRegister() {
 
       {showCvModal && (
         <div className="cv-modal-overlay">
-          <div className={`cv-modal ${isGuideOpen ? 'cv-modal-expanded' : ''} ${devDebugOpen ? 'cv-modal-debug-open' : ''}`}>
+          <div className={`cv-modal ${isGuideOpen ? 'cv-modal-expanded' : ''} ${devDebugOpen ? 'cv-modal-debug-open' : ''} ${(cvStep >= 1 && cvStep <= 4) ? 'cv-modal-split' : ''}`}>
 
             <MeasurementGuide
               categoryType={formData.category_type}
@@ -614,7 +630,7 @@ function ProductRegister() {
                   ?
                 </button>
                 <h3 className="cv-title">
-                {formData.category_type === 'Top' ? '상의' : '하의'} AI 자동 치수 추출
+                {formData.category_type === 'Top' ? '상의' : '하의'} 치수 자동 추출
                 </h3>
                 <button className="cv-close-btn" onClick={handleCloseCvModal}>✕</button>
               </div>
@@ -768,7 +784,7 @@ function ProductRegister() {
                 )}
                 {cvStep === 4 && (
                   <button className="cv-btn primary" onClick={handleAnalyze} disabled={cvLoading}>
-                  {cvLoading ? '분석 중...' : 'AI 분석 시작'}
+                  {cvLoading ? '분석 중...' : '치수 분석 시작'}
                   </button>
                 )}
                 {cvStep === 5 && (
@@ -791,10 +807,18 @@ function ProductRegister() {
               {cvLoading && (
                 <div className="cv-loader">
                   <div className="spinner"></div>
-                  <p>AI 누끼 추출 및 텐서 기하학 분석 중...</p>
+                  <p>이미지 분석 및 치수 추출 중...</p>
                 </div>
               )}
             </div> {/* cv-main end */}
+
+            {/* 측정 가이드 패널 (우측 배치) */}
+            {(cvStep >= 1 && cvStep <= 4) && (
+              <div className="cv-guide-panel right-panel">
+                <StepGuideAnimation step={cvStep} categoryType={formData.category_type} isAnalyzing={cvLoading} />
+              </div>
+            )}
+
           </div>
         </div>
       )}
@@ -875,17 +899,22 @@ function ProductRegister() {
                       className="size-name-input"
                     />
                     <div className="size-actions">
-                      <div className="ai-btn-wrapper">
+                      <div className="ai-btn-wrapper" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <button 
                           type="button" 
                           className="ai-extract-btn active"
+                          style={{ color: '#ffffff' }}
                           onClick={() => {
                             setActiveSizeId(size.id);
                             setShowCvModal(true);
                           }}
                         >
-                    AI 측정
+                          자동 측정
                         </button>
+                        <div className="tooltip-container" style={{ position: 'relative', display: 'inline-flex' }}>
+                          <span className="help-icon" style={{ cursor: 'pointer', background: '#e2e8f0', color: '#475569', borderRadius: '50%', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 'bold' }}>?</span>
+                          <span className="tooltip" style={{ width: '220px', lineHeight: '1.4' }}>의류 사진을 업로드하면 이미지 분석을 통해 자동으로 각 부위의 치수를 추출해주는 기능입니다.</span>
+                        </div>
                       </div>
                       {sizes.length > 1 && (
                         <button 

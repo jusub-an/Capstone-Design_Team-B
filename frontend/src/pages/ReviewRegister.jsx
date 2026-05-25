@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Star, Image as ImageIcon, X, Send, Loader2, Camera, RefreshCw, RotateCcw, ChevronDown, ChevronUp, Heart, ShoppingBag, AlertTriangle } from 'lucide-react';
+import { Star, Image as ImageIcon, X, Send, Loader2, Camera, RefreshCw, RotateCcw, ChevronDown, ChevronUp, Heart, ShoppingBag, AlertTriangle, FileText, MoveHorizontal, Shirt, User, Ruler } from 'lucide-react';
 import axios from 'axios';
 import ErrorToast from '../components/ErrorToast';
 import MeasurementWarning, { validateMeasurements } from '../components/MeasurementWarning';
 import './ReviewRegister.css';
 import './ProductList.css';
+import '../components/MeasurementGuide.css';
+import StepGuideAnimation from '../components/StepGuideAnimation';
 
 export default function ReviewRegister() {
   const { productId, reviewId } = useParams();
@@ -41,6 +43,7 @@ export default function ReviewRegister() {
 
   const canvasRef = useRef(null);
   const imgRef = useRef(null);
+  const abortControllerRef = useRef(null);
   const [scaleFactor, setScaleFactor] = useState(1);
 
   const userEmail = sessionStorage.getItem('userEmail');
@@ -356,9 +359,15 @@ export default function ReviewRegister() {
         reqFormData.append('shoulder_y2', (shoulderPts[1].y / scaleFactor).toString());
       }
 
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      abortControllerRef.current = new AbortController();
+
       const response = await fetch('http://localhost:8000/api/measure/clothing', {
         method: 'POST',
         body: reqFormData,
+        signal: abortControllerRef.current.signal
       });
 
       if (response.ok) {
@@ -371,12 +380,37 @@ export default function ReviewRegister() {
         setErrorToast({ code: null, detail: err.detail });
       }
     } catch (error) {
+      if (error.name === 'AbortError') {
+        console.log('Analysis aborted by user');
+        return;
+      }
       console.error(error);
       setErrorToast({ code: null, detail: '네트워크 오류가 발생했습니다.' });
     } finally {
       setCvLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!includeSizeReview) {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      setCvLoading(false);
+      setCvStep(0);
+      setCvImage(null);
+      setRectShirt(null);
+      setRectA4(null);
+      setCurrentRect(null);
+      setShoulderPts([]);
+      setCvResultData(null);
+      setMeasurementWarnings([]);
+      if (canvasRef.current) {
+        const ctx = canvasRef.current.getContext('2d');
+        ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+      }
+    }
+  }, [includeSizeReview]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -546,7 +580,7 @@ export default function ReviewRegister() {
         </div>
       </header>
 
-      <div className="review-register-container" style={{ maxWidth: '900px', margin: '40px auto' }}>
+      <div className="review-register-container" style={{ maxWidth: '1000px', margin: '40px auto' }}>
         <div className="review-register-header">
           <h1>{isEdit ? '리뷰 수정하기' : '리뷰 작성하기'}</h1>
           <p>상품에 대한 솔직한 의견을 들려주세요!</p>
@@ -631,7 +665,7 @@ export default function ReviewRegister() {
                     style={{ width: '18px', height: '18px', cursor: 'pointer' }}
                   />
                   <label className="form-label" style={{ margin: 0, cursor: 'pointer', color: includeSizeReview ? '#4f46e5' : '#475569' }}>
-                    [선택] AI 실측 사이즈 후기 함께 남기기
+                    [선택] 실측 사이즈 후기 함께 남기기
                   </label>
                 </div>
                 {includeSizeReview ? <ChevronUp size={20} color="#64748b" /> : <ChevronDown size={20} color="#64748b" />}
@@ -657,30 +691,56 @@ export default function ReviewRegister() {
 
                 <div className="ai-section">
                   <div className="ai-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <h3 style={{ fontSize: '1rem', fontWeight: 600 }}>AI 치수 추출</h3>
+                    <h3 style={{ fontSize: '1rem', fontWeight: 600 }}>치수 자동 추출</h3>
                     <button type="button" className="guide-btn" onClick={() => setIsGuideOpen(!isGuideOpen)}>{isGuideOpen ? '가이드 닫기' : '? 촬영 가이드'}</button>
                   </div>
 
                   {isGuideOpen && (
-                    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.5rem', marginBottom: '1.5rem' }}>
-                      <h4 style={{ margin: '0 0 1rem 0', color: '#334155', fontSize: '0.95rem' }}>📷 이렇게 촬영해주세요</h4>
-                      <ul style={{ margin: 0, paddingLeft: '1.5rem', color: '#475569', fontSize: '0.9rem', lineHeight: '1.6' }}>
-                        <li style={{ marginBottom: '0.5rem' }}><strong>공통:</strong> A4 용지(21×29.7cm)를 옷과 겹치지 않게 옆에 반듯하게 놓고 정면으로 찍어주세요.</li>
-                        {isTopItem ? (
-                          <>
-                            <li style={{ marginBottom: '0.5rem' }}><strong>상의:</strong> 겨드랑이 굴곡이 잘 보이도록 양소매를 살짝 벌려주세요.</li>
-                            <li style={{ marginBottom: '0.5rem' }}><strong>상의:</strong> 목 부분과 밑단이 구겨지지 않게 쫙 펴주세요.</li>
-                          </>
-                        ) : (
-                          <>
-                            <li style={{ marginBottom: '0.5rem' }}><strong>하의:</strong> 사타구니가 명확히 보이도록 두 다리를 겹치지 않게 A자 형태로 벌려주세요.</li>
-                            <li style={{ marginBottom: '0.5rem' }}><strong>하의:</strong> 허리선이 겹치거나 울지 않게 반듯하게 펴주세요.</li>
-                          </>
-                        )}
-                      </ul>
-                      <div style={{ marginTop: '1rem', padding: '0.75rem', background: '#fef2f2', color: '#dc2626', borderRadius: '8px', fontSize: '0.85rem', display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
-                  <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: '2px' }} />
-                        <span>의류가 아닌 사진이나 카테고리와 다른 옷을 업로드하면 측정 결과가 부정확합니다.</span>
+                    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.5rem', marginBottom: '1.5rem', display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+                      <div className="mg-section" style={{ flex: '1 1 250px', marginBottom: 0 }}>
+                        <div className="mg-section-title">
+                          <span className="mg-badge mg-badge-common">공통</span>
+                          준비 사항
+                        </div>
+                        <ul className="mg-list">
+                          <li className="mg-item">
+                            <span className="mg-item-icon"><FileText size={18} /></span>
+                            <span className="mg-item-text">A4 용지(21×29.7cm)를 옷과 겹치지 않게 옆에 반듯하게 놓아주세요.</span>
+                          </li>
+                          <li className="mg-item">
+                            <span className="mg-item-icon"><Camera size={18} /></span>
+                            <span className="mg-item-text">카메라는 바닥과 수평이 되도록 위에서 정면으로 찍어주세요.</span>
+                          </li>
+                        </ul>
+                      </div>
+
+                      <div className="mg-section" style={{ flex: '1 1 250px', marginBottom: 0 }}>
+                        <div className="mg-section-title">
+                          <span className={`mg-badge ${isTopItem ? 'mg-badge-top' : 'mg-badge-bottom'}`} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            {isTopItem ? <Shirt size={18} /> : null} {isTopItem ? '상의' : '하의'}
+                          </span>
+                          펼쳐놓기 팁
+                        </div>
+                        <ul className="mg-list">
+                          {isTopItem ? (
+                            <>
+                              <li className="mg-item"><span className="mg-item-icon"><MoveHorizontal size={18} /></span><span className="mg-item-text">겨드랑이 굴곡이 잘 보이도록 양소매를 살짝 벌려주세요.</span></li>
+                              <li className="mg-item"><span className="mg-item-icon"><Shirt size={18} /></span><span className="mg-item-text">목 부분과 밑단이 구겨지지 않게 쫙 펴주세요.</span></li>
+                            </>
+                          ) : (
+                            <>
+                              <li className="mg-item"><span className="mg-item-icon"><User size={18} /></span><span className="mg-item-text">사타구니가 명확히 보이도록 두 다리를 겹치지 않게 A자 형태로 살짝 벌려주세요.</span></li>
+                              <li className="mg-item"><span className="mg-item-icon"><Ruler size={18} /></span><span className="mg-item-text">허리선이 겹치거나 울지 않게 반듯하게 펴주세요.</span></li>
+                            </>
+                          )}
+                        </ul>
+                      </div>
+
+                      <div className="mg-warn" style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', width: '100%', marginTop: '10px' }}>
+                        <AlertTriangle size={18} className="mg-warn-icon" style={{ marginTop: '2px', flexShrink: 0 }} />
+                        <span className="mg-warn-text">
+                          의류가 아닌 사진이나 카테고리({isTopItem ? '상의' : '하의'})와 다른 옷을 업로드하면 측정 결과가 부정확합니다.
+                        </span>
                       </div>
                     </div>
                   )}
@@ -694,40 +754,48 @@ export default function ReviewRegister() {
                     </label>
                   )}
 
-                  <div className="canvas-wrapper" style={{ display: (cvStep > 0 && cvStep < 5) ? 'flex' : 'none', flexDirection: 'column', alignItems: 'center', gap: '15px' }}>
-                    <div className="canvas-instruction" style={{ background: '#334155', color: 'white', padding: '8px 16px', borderRadius: '20px', fontSize: '0.9rem' }}>
-                      {cvStep === 1 ? "1. 의류 영역을 드래그하세요" : 
-                       cvStep === 2 ? "2. A4 용지 영역을 드래그하세요" : 
-                       cvStep === 3 ? "3. 어깨 재봉선 상단 양끝을 2번 클릭하세요" : ""}
-                    </div>
-                    <canvas
-                      ref={canvasRef}
-                      onMouseDown={onDown}
-                      onMouseMove={onMove}
-                      onMouseUp={onUp}
-                      onTouchStart={onDown}
-                      onTouchMove={onMove}
-                      onTouchEnd={onUp}
-                      style={{ maxWidth: '100%', borderRadius: '8px', background: '#000' }}
-                    />
-                    <div className="canvas-actions" style={{ display: 'flex', gap: '10px', width: '100%' }}>
-                      <button type="button" onClick={() => setCvStep(0)} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
-                        <RefreshCw size={16} /> 다시 업로드
-                      </button>
-                      <button type="button" onClick={() => {
-                        setRectShirt(null);
-                        setRectA4(null);
-                        setShoulderPts([]);
-                        setCvStep(1);
-                        redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, null, null, null, []);
-                      }} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
-                        <RotateCcw size={16} /> 영역 다시 그리기
-                      </button>
-                      {cvStep === 4 && (
-                        <button type="button" onClick={handleAnalyze} disabled={cvLoading} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: '#4f46e5', color: 'white', cursor: 'pointer', fontWeight: 600 }}>
-                          {cvLoading ? '분석 중...' : '분석 시작'}
+                  <div className="cv-extract-container" style={{ display: (cvStep > 0 && cvStep < 5) ? 'flex' : 'none', gap: '20px', alignItems: 'stretch', width: '100%' }}>
+                    <div className="canvas-wrapper" style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+                      <div className="canvas-instruction" style={{ background: '#ffffff', color: '#1e293b', padding: '16px', borderBottom: '1px solid #e2e8f0', fontSize: '1rem', fontWeight: 700, textAlign: 'center' }}>
+                        {cvStep === 1 ? "1. 의류 영역을 드래그하세요" : 
+                         cvStep === 2 ? "2. A4 용지 영역을 드래그하세요" : 
+                         cvStep === 3 ? "3. 어깨 재봉선 상단 양끝을 2번 클릭하세요" : ""}
+                      </div>
+                      <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '16px', background: '#f1f5f9' }}>
+                        <canvas
+                          ref={canvasRef}
+                          onMouseDown={onDown}
+                          onMouseMove={onMove}
+                          onMouseUp={onUp}
+                          onTouchStart={onDown}
+                          onTouchMove={onMove}
+                          onTouchEnd={onUp}
+                          style={{ maxWidth: '100%', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}
+                        />
+                      </div>
+                      <div className="canvas-actions" style={{ display: 'flex', gap: '10px', width: '100%', padding: '16px', background: '#ffffff', borderTop: '1px solid #e2e8f0' }}>
+                        <button type="button" disabled={cvLoading} onClick={() => setCvStep(0)} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#f8fafc', color: '#475569', cursor: cvLoading ? 'not-allowed' : 'pointer', opacity: cvLoading ? 0.6 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontWeight: 600, transition: 'all 0.2s', whiteSpace: 'nowrap' }} onMouseOver={(e) => { if(!cvLoading) e.currentTarget.style.background='#f1f5f9' }} onMouseOut={(e) => { if(!cvLoading) e.currentTarget.style.background='#f8fafc' }}>
+                          <RefreshCw size={18} /> 다시 업로드
                         </button>
-                      )}
+                        <button type="button" disabled={cvLoading} onClick={() => {
+                          setRectShirt(null);
+                          setRectA4(null);
+                          setShoulderPts([]);
+                          setCvStep(1);
+                          redrawCanvas(canvasRef.current.width, canvasRef.current.height, scaleFactor, null, null, null, []);
+                        }} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#f8fafc', color: '#475569', cursor: cvLoading ? 'not-allowed' : 'pointer', opacity: cvLoading ? 0.6 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontWeight: 600, transition: 'all 0.2s', whiteSpace: 'nowrap' }} onMouseOver={(e) => { if(!cvLoading) e.currentTarget.style.background='#f1f5f9' }} onMouseOut={(e) => { if(!cvLoading) e.currentTarget.style.background='#f8fafc' }}>
+                          <RotateCcw size={18} /> 영역 초기화
+                        </button>
+                        {cvStep === 4 && (
+                          <button type="button" onClick={handleAnalyze} disabled={cvLoading} style={{ flex: 1.5, padding: '12px', borderRadius: '8px', border: 'none', background: '#6366f1', color: '#ffffff', cursor: 'pointer', fontWeight: 700, fontSize: '1rem', transition: 'all 0.2s', boxShadow: '0 4px 12px rgba(99,102,241,0.3)', whiteSpace: 'nowrap' }} onMouseOver={(e) => e.currentTarget.style.background='#4f46e5'} onMouseOut={(e) => e.currentTarget.style.background='#6366f1'}>
+                            {cvLoading ? '분석 중...' : '치수 분석 시작'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    
+                    <div className="guide-wrapper" style={{ width: '340px', flexShrink: 0 }}>
+                      <StepGuideAnimation step={cvStep} categoryType={isTopItem ? 'Top' : 'bottom'} isAnalyzing={cvLoading} />
                     </div>
                   </div>
 

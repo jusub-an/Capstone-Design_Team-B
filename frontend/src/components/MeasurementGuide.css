@@ -12,7 +12,7 @@
 .mg-panel-open {
   width: 280px;
   min-width: 280px;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  border-right: 1px solid #e2e8f0;
 }
 
 .mg-panel-inner {
@@ -30,19 +30,19 @@
   justify-content: space-between;
   align-items: center;
   padding-bottom: 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid #e2e8f0;
 }
 
 .mg-panel-title {
   font-size: 0.95rem;
   font-weight: 700;
-  color: #e2e8f0;
+  color: #0f172a;
 }
 
 .mg-panel-close {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #94a3b8;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: #64748b;
   font-size: 0.85rem;
   width: 28px;
   height: 28px;
@@ -55,8 +55,8 @@
 }
 
 .mg-panel-close:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.12);
+  color: #0f172a;
+  background: #e2e8f0;
 }
 
 /* 섹션 */
@@ -70,7 +70,7 @@
   gap: 6px;
   font-size: 0.8rem;
   font-weight: 600;
-  color: #94a3b8;
+  color: #64748b;
   margin-bottom: 8px;
 }
 
@@ -84,9 +84,9 @@
   font-weight: 700;
 }
 
-.mg-badge-common { background: rgba(99, 102, 241, 0.2); color: #a5b4fc; }
-.mg-badge-top    { background: rgba(59, 130, 246, 0.2); color: #93c5fd; }
-.mg-badge-bottom { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+.mg-badge-common { background: #e0e7ff; color: #4f46e5; }
+.mg-badge-top    { background: #dbeafe; color: #2563eb; }
+.mg-badge-bottom { background: #fef3c7; color: #d97706; }
 
 /* 팁 리스트 */
 .mg-list {
@@ -103,20 +103,20 @@
   align-items: flex-start;
   gap: 8px;
   padding: 8px 10px;
-  background: rgba(255, 255, 255, 0.03);
+  background: #ffffff;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid #e2e8f0;
   transition: background 0.2s;
 }
 
-.mg-item:hover { background: rgba(255, 255, 255, 0.07); }
+.mg-item:hover { background: #f8fafc; }
 
 .mg-item-icon { font-size: 0.95rem; flex-shrink: 0; margin-top: 1px; }
 
 .mg-item-text {
   font-size: 0.78rem;
   line-height: 1.45;
-  color: #cbd5e1;
+  color: #334155;
 }
 
 /* 경고 */
@@ -125,8 +125,8 @@
   align-items: flex-start;
   gap: 7px;
   padding: 10px;
-  background: rgba(239, 68, 68, 0.08);
-  border: 1px solid rgba(239, 68, 68, 0.18);
+  background: #fef2f2;
+  border: 1px solid #fecaca;
   border-radius: 8px;
 }
 
@@ -135,7 +135,7 @@
 .mg-warn-text {
   font-size: 0.76rem;
   line-height: 1.4;
-  color: #fca5a5;
+  color: #b91c1c;
 }
 
 /* 모바일 */

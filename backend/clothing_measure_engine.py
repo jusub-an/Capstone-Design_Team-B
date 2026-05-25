@@ -133,11 +133,20 @@ class ClothingMeasureEngine:
         debug_stages['2_shirt_rembg_rgba'] = self._encode_img(self._rgba_to_vis(shirt_rgba))
         debug_stages['3_a4_rembg_rgba'] = self._encode_img(self._rgba_to_vis(a4_rgba))
 
-        # 2. A4 분석 (Threshold를 127로 올려 더 날카로운 경계 획득)
+        # 2. A4 분석 (A4 축소 방지를 위해 임계값을 50으로 낮춤)
         a4_alpha = a4_rgba[:, :, 3]
-        _, a4_alpha_thresh = cv2.threshold(a4_alpha, 127, 255, cv2.THRESH_BINARY)
+        
+        # 디버그 3.5: A4 용지 가장자리 투명도 수치 시각화
+        vis_a4_edge = self._generate_edge_debug_vis(a4_rgba)
+        if vis_a4_edge:
+            debug_stages['3_5_a4_edge_values'] = vis_a4_edge
+            
+        # 디버그 3.8: 쓰레스홀드 적용 전 A4 알파 채널
+        debug_stages['3_8_a4_alpha_before'] = self._encode_img(a4_alpha)
 
-        # 디버그: A4 알파 마스크
+        _, a4_alpha_thresh = cv2.threshold(a4_alpha, 5, 255, cv2.THRESH_BINARY)
+
+        # 디버그 4: 쓰레스홀드 적용 후 A4 알파 마스크
         debug_stages['4_a4_alpha_mask'] = self._encode_img(a4_alpha_thresh)
 
         contours_a4, _ = cv2.findContours(a4_alpha_thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -217,9 +226,19 @@ class ClothingMeasureEngine:
         # 3. 의류 마스크 병합
         full_shirt_mask = np.zeros((int(orig_h), int(orig_w)), dtype=np.uint8)
         shirt_alpha = shirt_rgba[:, :, 3]
-        _, shirt_alpha_thresh = cv2.threshold(shirt_alpha, 127, 255, cv2.THRESH_BINARY)
 
-        # 디버그: 의류 알파 마스크
+        # 디버그 5.5: 의류 가장자리 투명도 수치 시각화
+        vis_shirt_edge = self._generate_edge_debug_vis(shirt_rgba)
+        if vis_shirt_edge:
+            debug_stages['5_5_shirt_edge_values'] = vis_shirt_edge
+
+        # 디버그 5.8: 쓰레스홀드 적용 전 의류 알파 채널
+        debug_stages['5_8_shirt_alpha_before'] = self._encode_img(shirt_alpha)
+
+        # 그림자 노이즈 억제를 위해 임계값 250 적용
+        _, shirt_alpha_thresh = cv2.threshold(shirt_alpha, 250, 255, cv2.THRESH_BINARY)
+
+        # 디버그 6: 쓰레스홀드 적용 후 의류 알파 마스크
         debug_stages['6_shirt_alpha_mask'] = self._encode_img(shirt_alpha_thresh)
         
         # 실제 이미지 마스크의 크기에 맞춤 (Frontend에서 소수점 픽셀 반올림 차이 해결)
@@ -235,8 +254,13 @@ class ClothingMeasureEngine:
         # 디버그: 전체 캔버스에 배치된 마스크
         debug_stages['7_full_mask_on_canvas'] = self._encode_img(full_shirt_mask)
 
-        warped_shirt_mask = cv2.warpPerspective(full_shirt_mask, M_new, (int(new_width), int(new_height)), flags=cv2.INTER_NEAREST)
-        _, warped_shirt_mask = cv2.threshold(warped_shirt_mask, 127, 255, cv2.THRESH_BINARY)
+        warped_shirt_mask = cv2.warpPerspective(full_shirt_mask, M_new, (int(new_width), int(new_height)), flags=cv2.INTER_LINEAR)
+        _, warped_shirt_mask = cv2.threshold(warped_shirt_mask, 30, 255, cv2.THRESH_BINARY)
+        
+        # 윤곽선 스무딩 (Morphological Close & Open) 계단 현상 및 잔털 노이즈 제거
+        kernel = np.ones((5, 5), np.uint8)
+        warped_shirt_mask = cv2.morphologyEx(warped_shirt_mask, cv2.MORPH_CLOSE, kernel)
+        warped_shirt_mask = cv2.morphologyEx(warped_shirt_mask, cv2.MORPH_OPEN, kernel)
 
         # 디버그: 워프된 마스크
         debug_stages['8_warped_shirt_mask'] = self._encode_img(warped_shirt_mask)
@@ -586,6 +610,62 @@ class ClothingMeasureEngine:
         buf = io.BytesIO()
         pil_img.save(buf, format="PNG")
         return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+    def _generate_edge_debug_vis(self, rgba_img):
+        alpha_mask = rgba_img[:, :, 3]
+        
+        # 핵심 경계선을 중앙에 잡기 위해 알파값이 중간(127)을 넘는 지점을 찾음
+        y_ind, x_ind = np.where(alpha_mask > 127)
+        if len(y_ind) == 0:
+            y_ind, x_ind = np.where(alpha_mask > 0)
+            if len(y_ind) == 0:
+                return None
+            
+        min_x_idx = np.argmin(x_ind)
+        tx, ty = x_ind[min_x_idx], y_ind[min_x_idx]
+        
+        crop_size = 30
+        half = crop_size // 2
+        sty = max(0, ty - half)
+        edy = min(alpha_mask.shape[0], ty + half)
+        stx = max(0, tx - half) # 정확히 중앙에 오도록 절반(half)만큼 뺌
+        edx = min(alpha_mask.shape[1], stx + crop_size)
+        
+        actual_h = edy - sty
+        actual_w = edx - stx
+        
+        if actual_h <= 0 or actual_w <= 0:
+            return None
+            
+        crop_alpha = alpha_mask[sty:edy, stx:edx]
+        crop_orig = rgba_img[sty:edy, stx:edx]
+        
+        cell_size = 30
+        vis_w = actual_w * cell_size
+        vis_h = actual_h * cell_size
+        
+        # 1. 숫자 기입된 알파 마스크 시각화
+        vis_alpha = cv2.resize(crop_alpha, (vis_w, vis_h), interpolation=cv2.INTER_NEAREST)
+        vis_alpha = cv2.cvtColor(vis_alpha, cv2.COLOR_GRAY2BGR)
+        
+        for i in range(actual_h):
+            for j in range(actual_w):
+                val = crop_alpha[i, j]
+                color = (0, 0, 0) if val > 127 else (255, 255, 255)
+                cv2.rectangle(vis_alpha, (j * cell_size, i * cell_size), ((j+1) * cell_size, (i+1) * cell_size), (100, 100, 100), 1)
+                cv2.putText(vis_alpha, str(val), (j * cell_size + 2, i * cell_size + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
+
+        # 2. 원본 RGBA 시각화 (체커보드 배경 + 동일하게 확대)
+        vis_orig = self._rgba_to_vis(crop_orig)
+        vis_orig = cv2.resize(vis_orig, (vis_w, vis_h), interpolation=cv2.INTER_NEAREST)
+        
+        # 라벨 추가
+        cv2.putText(vis_orig, "Original Image", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+        cv2.putText(vis_alpha, "Alpha Values", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+
+        # 두 이미지를 가로로 이어붙이기
+        combined = np.hstack((vis_orig, vis_alpha))
+        return self._encode_img(combined)
 
     def _rgba_to_vis(self, rgba_img):
         """RGBA 이미지를 체커보드 배경 위에 합성하여 시각화"""
