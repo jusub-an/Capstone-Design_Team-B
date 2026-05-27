@@ -581,9 +581,21 @@ export default function ReviewRegister() {
       </header>
 
       <div className="review-register-container" style={{ maxWidth: '1000px', margin: '40px auto' }}>
-        <div className="review-register-header">
-          <h1>{isEdit ? '리뷰 수정하기' : '리뷰 작성하기'}</h1>
-          <p>상품에 대한 솔직한 의견을 들려주세요!</p>
+        <div className="review-register-header" style={{ textAlign: 'left', marginBottom: '24px' }}>
+          <h1 style={{ margin: '0 0 8px', fontSize: '1.8rem', color: '#1e293b' }}>{isEdit ? '리뷰 수정하기' : '리뷰 작성하기'}</h1>
+          <p style={{ margin: 0, color: '#64748b' }}>상품에 대한 솔직한 의견을 들려주세요!</p>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '16px', background: '#ffffff', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px', textAlign: 'left' }}>
+          <img 
+            src={`http://localhost:8000${product.image_url}`} 
+            alt={product.name} 
+            style={{ width: '64px', height: '64px', objectFit: 'cover', borderRadius: '8px', border: '1px solid #f1f5f9' }}
+          />
+          <div>
+            <div style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 600, marginBottom: '4px' }}>{product.brand || '브랜드 없음'}</div>
+            <div style={{ fontSize: '1rem', color: '#1e293b', fontWeight: 700 }}>{product.name}</div>
+          </div>
         </div>
 
         <form className="review-form" onSubmit={handleSubmit}>
