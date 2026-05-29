@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Trash2, ShoppingCart, ShoppingBag } from 'lucide-react';
+import './ProductList.css';
 import './Cart.css';
 import { useToast } from '../contexts/ToastContext';
 
@@ -55,11 +56,13 @@ function Cart() {
   return (
     <div className="cart-page">
       <header className="cart-header">
+        <div className="logo-section" onClick={() => navigate('/products')}>
+          <h2>Virtual Fitting</h2>
+        </div>
+        <h1 className="cart-header-title">장바구니</h1>
         <button className="cart-back-btn" onClick={() => navigate(-1)}>
           <ArrowLeft size={20} />
         </button>
-        <h1 className="cart-header-title">장바구니</h1>
-        <div style={{ width: 40 }} />
       </header>
 
       {loading ? (
