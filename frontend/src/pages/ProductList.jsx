@@ -199,14 +199,14 @@ function ProductList() {
                       ))}
                     </div>
                   )}
-                  <div style={{ padding: '12px 16px' }}>
+                  <div style={{ padding: '10px 16px 14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <button onClick={() => { setCartOpen(false); navigate('/cart'); }}
+                      style={{ width: '100%', padding: '9px', borderRadius: '10px', border: '1.5px solid #6366f1', background: 'white', color: '#6366f1', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer' }}>
+                      장바구니 보기
+                    </button>
                     <button onClick={() => { setCartOpen(false); navigate('/mypage/fitting'); }}
-                      style={{
-                        width: '100%', padding: '10px', borderRadius: '10px', border: 'none',
-                        background: 'linear-gradient(135deg, #6366f1, #a855f7)',
-                        color: 'white', fontWeight: 700, fontSize: '0.88rem', cursor: 'pointer',
-                      }}>
-                  가상 피팅룸에서 착용해보기
+                      style={{ width: '100%', padding: '9px', borderRadius: '10px', border: 'none', background: 'linear-gradient(135deg, #6366f1, #a855f7)', color: 'white', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer' }}>
+                      가상 피팅룸에서 착용해보기
                     </button>
                   </div>
                 </div>

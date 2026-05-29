@@ -534,6 +534,24 @@ function FittingRoom() {
     setLayers(prev => prev.map(l => l.id === layerId ? { ...l, visible: !l.visible } : l));
   };
 
+  const changeLayerSize = async (layer, newSizeName) => {
+    const res = await fetch(
+      `${BASE}/api/cart/${layer.cart_item_id}?user_email=${encodeURIComponent(userEmail)}&size_name=${encodeURIComponent(newSizeName)}`,
+      { method: 'PATCH' }
+    );
+    if (!res.ok) return;
+    const updated = await res.json();
+    setCartItems(prev => prev.map(c => c.id === layer.cart_item_id ? updated : c));
+    const cartItem = cartItems.find(c => c.id === layer.cart_item_id);
+    const sizes = cartItem?.product?.top_sizes?.length > 0
+      ? cartItem.product.top_sizes
+      : cartItem?.product?.bottom_sizes ?? [];
+    const newSizeInfo = sizes.find(s => s.size_name === newSizeName);
+    setLayers(prev => prev.map(l =>
+      l.id === layer.id ? { ...l, size_name: newSizeName, sizeInfo: newSizeInfo } : l
+    ));
+  };
+
   const resetLayerPosition = (layerId) => {
     setLayers(prev => prev.map(l => {
       if (l.id !== layerId) return l;
@@ -799,10 +817,14 @@ function FittingRoom() {
                       ))}
                     </div>
                   )}
-                  <div style={{ padding: '12px 16px' }}>
+                  <div style={{ padding: '10px 16px 14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <button onClick={() => { setCartOpen(false); navigate('/cart'); }}
+                      style={{ width: '100%', padding: '9px', borderRadius: '10px', border: '1.5px solid #6366f1', background: 'white', color: '#6366f1', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer' }}>
+                      장바구니 보기
+                    </button>
                     <button onClick={() => { setCartOpen(false); navigate('/products'); }}
-                      style={{ width: '100%', padding: '10px', borderRadius: '10px', border: 'none', background: 'linear-gradient(135deg, #6366f1, #a855f7)', color: 'white', fontWeight: 700, fontSize: '0.88rem', cursor: 'pointer' }}>
-                  가상 피팅룸 닫기
+                      style={{ width: '100%', padding: '9px', borderRadius: '10px', border: 'none', background: 'linear-gradient(135deg, #6366f1, #a855f7)', color: 'white', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer' }}>
+                      가상 피팅룸 닫기
                     </button>
                   </div>
                 </div>
@@ -1014,7 +1036,26 @@ function FittingRoom() {
                       <p style={{ margin: 0, fontSize: '0.78rem', fontWeight: 600, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {layer.product_name}
                       </p>
-                      {layer.size_name && <span style={{ fontSize: '0.7rem', color: '#6366f1' }}>{layer.size_name}</span>}
+                      {(() => {
+                        const cartItem = cartItems.find(c => c.id === layer.cart_item_id);
+                        const sizes = cartItem?.product?.top_sizes?.length > 0
+                          ? cartItem.product.top_sizes
+                          : cartItem?.product?.bottom_sizes ?? [];
+                        return sizes.length > 0 ? (
+                          <select
+                            value={layer.size_name || ''}
+                            onClick={e => e.stopPropagation()}
+                            onChange={e => { e.stopPropagation(); changeLayerSize(layer, e.target.value); }}
+                            style={{ fontSize: '0.7rem', color: '#6366f1', border: '1px solid #c7d2fe', borderRadius: '5px', padding: '1px 4px', background: '#eef2ff', cursor: 'pointer', marginTop: '2px' }}
+                          >
+                            {sizes.map(s => (
+                              <option key={s.size_name} value={s.size_name}>{s.size_name}</option>
+                            ))}
+                          </select>
+                        ) : layer.size_name ? (
+                          <span style={{ fontSize: '0.7rem', color: '#6366f1' }}>{layer.size_name}</span>
+                        ) : null;
+                      })()}
                     </div>
                     <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
                       <button onClick={e => { e.stopPropagation(); resetLayerPosition(layer.id); }} style={{ background: 'white', border: '1px solid #cbd5e1', borderRadius: '6px', cursor: 'pointer', color: '#475569', padding: '4px 8px', fontSize: '0.7rem', fontWeight: 600 }}>

@@ -126,8 +126,10 @@ export default function MyReviews() {
                       {cartItems.map(item => (
                         <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 16px', borderBottom: '1px solid #f8fafc' }}>
                           <img src={`http://localhost:8000${item.product.image_url}`} alt={item.product.name}
-                            style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '8px', flexShrink: 0 }} />
-                          <div style={{ flex: 1, minWidth: 0 }}>
+                            onClick={() => { setCartOpen(false); navigate(`/products/${item.product.id}`); }}
+                            style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '8px', flexShrink: 0, cursor: 'pointer' }} />
+                          <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
+                            onClick={() => { setCartOpen(false); navigate(`/products/${item.product.id}`); }}>
                             <p style={{ margin: 0, fontSize: '0.8rem', fontWeight: 600, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.product.name}</p>
                             {item.size_name && <span style={{ fontSize: '0.72rem', color: '#6366f1' }}>{item.size_name}</span>}
                           </div>
@@ -137,10 +139,14 @@ export default function MyReviews() {
                       ))}
                     </div>
                   )}
-                  <div style={{ padding: '12px 16px' }}>
+                  <div style={{ padding: '10px 16px 14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <button onClick={() => { setCartOpen(false); navigate('/cart'); }}
+                      style={{ width: '100%', padding: '9px', borderRadius: '10px', border: '1.5px solid #6366f1', background: 'white', color: '#6366f1', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer' }}>
+                      장바구니 보기
+                    </button>
                     <button onClick={() => { setCartOpen(false); navigate('/mypage/fitting'); }}
-                      style={{ width: '100%', padding: '10px', borderRadius: '10px', border: 'none', background: 'linear-gradient(135deg, #6366f1, #a855f7)', color: 'white', fontWeight: 700, fontSize: '0.88rem', cursor: 'pointer' }}>
-                  가상 피팅룸에서 착용해보기
+                      style={{ width: '100%', padding: '9px', borderRadius: '10px', border: 'none', background: 'linear-gradient(135deg, #6366f1, #a855f7)', color: 'white', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer' }}>
+                      가상 피팅룸에서 착용해보기
                     </button>
                   </div>
                 </div>

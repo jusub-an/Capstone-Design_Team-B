@@ -842,6 +842,33 @@ def remove_from_cart(item_id: int, user_email: str = Query(...), db: Session = D
     return {"message": "Removed"}
 
 
+@app.patch("/api/cart/{item_id}", response_model=schemas.CartItemResponse)
+def update_cart_item_size(
+    item_id: int,
+    user_email: str = Query(...),
+    size_name: str = Query(None),
+    db: Session = Depends(get_db)
+):
+    item = db.query(models.CartItem).filter(
+        models.CartItem.id == item_id,
+        models.CartItem.user_email == user_email
+    ).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Cart item not found")
+    duplicate = db.query(models.CartItem).filter(
+        models.CartItem.user_email == user_email,
+        models.CartItem.product_id == item.product_id,
+        models.CartItem.size_name == size_name,
+        models.CartItem.id != item_id
+    ).first()
+    if duplicate:
+        raise HTTPException(status_code=409, detail="Already in cart with this size")
+    item.size_name = size_name
+    db.commit()
+    db.refresh(item)
+    return item
+
+
 @app.delete("/api/cart/user/{user_email}/product/{product_id}")
 def remove_from_cart_by_product(product_id: int, user_email: str, size_name: str = Query(None), db: Session = Depends(get_db)):
     q = db.query(models.CartItem).filter(

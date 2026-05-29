@@ -14,6 +14,7 @@ import VirtualFitting from './pages/VirtualFitting';
 import FittingRoom from './pages/FittingRoom';
 
 import AvatarManage from './pages/AvatarManage';
+import Cart from './pages/Cart';
 
 
 function App() {
@@ -42,6 +43,7 @@ function App() {
           <Route path="/mypage/fitting" element={<FittingRoom />} />
           <Route path="/mypage/wishes" element={<Wishlist />} />
           <Route path="/mypage/reviews" element={<MyReviews />} />
+          <Route path="/cart" element={<Cart />} />
 
         </Routes>
       </div>
