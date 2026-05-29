@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Trash2, ShoppingCart, ShoppingBag } from 'lucide-react';
 import './Cart.css';
+import { useToast } from '../contexts/ToastContext';
 
 const BASE = 'http://localhost:8000';
 
@@ -10,6 +11,7 @@ function Cart() {
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
   const email = sessionStorage.getItem('userEmail');
+  const showToast = useToast();
 
   const fetchCart = useCallback(async () => {
     if (!email) { navigate('/login'); return; }
@@ -25,6 +27,7 @@ function Cart() {
   const removeItem = async (itemId) => {
     await fetch(`${BASE}/api/cart/${itemId}?user_email=${encodeURIComponent(email)}`, { method: 'DELETE' });
     setCartItems(prev => prev.filter(i => i.id !== itemId));
+    showToast('상품이 삭제됐습니다', 'info');
   };
 
   const clearAll = async () => {
@@ -32,6 +35,7 @@ function Cart() {
       fetch(`${BASE}/api/cart/${item.id}?user_email=${encodeURIComponent(email)}`, { method: 'DELETE' })
     ));
     setCartItems([]);
+    showToast('장바구니를 비웠습니다', 'info');
   };
 
   const changeSize = async (itemId, newSize) => {
@@ -42,6 +46,7 @@ function Cart() {
     if (res.ok) {
       const updated = await res.json();
       setCartItems(prev => prev.map(i => i.id === itemId ? updated : i));
+      showToast(`사이즈가 ${newSize}로 변경됐습니다`, 'success');
     }
   };
 

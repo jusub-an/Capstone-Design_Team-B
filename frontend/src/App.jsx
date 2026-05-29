@@ -1,4 +1,5 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { ToastProvider } from './contexts/ToastContext';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import ProductList from './pages/ProductList';
@@ -12,42 +13,39 @@ import MyReviews from './pages/MyReviews';
 import BodyMeasure from './pages/BodyMeasure';
 import VirtualFitting from './pages/VirtualFitting';
 import FittingRoom from './pages/FittingRoom';
-
 import AvatarManage from './pages/AvatarManage';
 import Cart from './pages/Cart';
 
-
 function App() {
   return (
-    <Router>
-      <div className="app-container">
-        {/* Animated Background Blobs */}
-        <div className="blob blob-1"></div>
-        <div className="blob blob-2"></div>
-        
-        <Routes>
-          <Route path="/" element={<Navigate to="/products" replace />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/products" element={<ProductList />} />
-          <Route path="/products/:id" element={<ProductDetail />} />
-          <Route path="/products/:id/fitting" element={<VirtualFitting />} />
-          <Route path="/products/new" element={<ProductRegister />} />
-          <Route path="/products/edit/:id" element={<ProductRegister />} />
-          <Route path="/mypage" element={<MyPage />} />
-          <Route path="/mypage/products" element={<MyProducts />} />
-          <Route path="/reviews/new/:productId" element={<ReviewRegister />} />
-          <Route path="/reviews/edit/:reviewId" element={<ReviewRegister />} />
-          <Route path="/mypage/body-measure" element={<BodyMeasure />} />
-          <Route path="/mypage/avatar" element={<AvatarManage />} />
-          <Route path="/mypage/fitting" element={<FittingRoom />} />
-          <Route path="/mypage/wishes" element={<Wishlist />} />
-          <Route path="/mypage/reviews" element={<MyReviews />} />
-          <Route path="/cart" element={<Cart />} />
-
-        </Routes>
-      </div>
-    </Router>
+    <ToastProvider>
+      <Router>
+        <div className="app-container">
+          <div className="blob blob-1"></div>
+          <div className="blob blob-2"></div>
+          <Routes>
+            <Route path="/" element={<Navigate to="/products" replace />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/products" element={<ProductList />} />
+            <Route path="/products/:id" element={<ProductDetail />} />
+            <Route path="/products/:id/fitting" element={<VirtualFitting />} />
+            <Route path="/products/new" element={<ProductRegister />} />
+            <Route path="/products/edit/:id" element={<ProductRegister />} />
+            <Route path="/mypage" element={<MyPage />} />
+            <Route path="/mypage/products" element={<MyProducts />} />
+            <Route path="/reviews/new/:productId" element={<ReviewRegister />} />
+            <Route path="/reviews/edit/:reviewId" element={<ReviewRegister />} />
+            <Route path="/mypage/body-measure" element={<BodyMeasure />} />
+            <Route path="/mypage/avatar" element={<AvatarManage />} />
+            <Route path="/mypage/fitting" element={<FittingRoom />} />
+            <Route path="/mypage/wishes" element={<Wishlist />} />
+            <Route path="/mypage/reviews" element={<MyReviews />} />
+            <Route path="/cart" element={<Cart />} />
+          </Routes>
+        </div>
+      </Router>
+    </ToastProvider>
   );
 }
 

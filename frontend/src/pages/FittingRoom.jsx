@@ -2,7 +2,9 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Eye, EyeOff, Trash2, User, Shirt, ChevronDown, ChevronUp, RotateCcw, Heart, ShoppingBag, ShoppingCart, Layers } from 'lucide-react';
 import './ProductList.css';
+import './FittingRoom.css';
 import FittingRoomGuide from '../components/FittingRoomGuide';
+import { useToast } from '../contexts/ToastContext';
 
 const BASE = 'http://localhost:8000';
 
@@ -323,6 +325,8 @@ function FittingRoom() {
   const [preparingLayer, setPreparingLayer] = useState(null); // product_id being prepared
   const [cartOpen, setCartOpen] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const showToast = useToast();
 
   useEffect(() => {
     if (!userEmail) { setLoadingAvatar(false); return; }
@@ -523,11 +527,13 @@ function FittingRoom() {
       const imgSrc = fittingUrl || p.image_url;
       loadLayerImage(layerId, imgSrc, autoFitParams);
     }
+    showToast('착용됐습니다', 'success');
   };
 
   const removeLayer = (layerId) => {
     setLayers(prev => prev.filter(l => l.id !== layerId));
     if (selectedLayerId === layerId) setSelectedLayerId(null);
+    showToast('제거됐습니다', 'info');
   };
 
   const toggleVisible = (layerId) => {
@@ -550,6 +556,7 @@ function FittingRoom() {
     setLayers(prev => prev.map(l =>
       l.id === layer.id ? { ...l, size_name: newSizeName, sizeInfo: newSizeInfo } : l
     ));
+    showToast(`사이즈가 ${newSizeName}로 변경됐습니다`, 'success');
   };
 
   const resetLayerPosition = (layerId) => {
@@ -849,12 +856,9 @@ function FittingRoom() {
           )}
         </div>
       </header>
-      <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+      <div className="fr-body">
         {/* Canvas area */}
-        <div style={{
-          flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
-          justifyContent: 'center', padding: '20px', gap: '12px',
-        }}>
+        <div className="fr-canvas-area">
           {loadingAvatar ? (
             <p style={{ color: '#94a3b8' }}>아바타 불러오는 중...</p>
           ) : !avatar ? (
@@ -872,7 +876,13 @@ function FittingRoom() {
               >신체 측정 하러 가기</button>
             </div>
           ) : (
-            <>
+            <div className="fr-canvas-wrap">
+              {preparingLayer && (
+                <div className="fr-preparing-overlay">
+                  <div className="fr-preparing-spinner" />
+                  <p className="fr-preparing-text">의류 이미지 준비 중...</p>
+                </div>
+              )}
               <canvas
                 ref={canvasRef}
                 width={CANVAS_W}
@@ -899,18 +909,28 @@ function FittingRoom() {
               <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: 0 }}>
                 옷을 클릭해 선택 후 드래그로 이동 · 스크롤로 크기 조절
               </p>
-            </>
+            </div>
           )}
         </div>
 
+        {/* 모바일 패널 토글 버튼 */}
+        <button className="fr-panel-toggle" onClick={() => setPanelOpen(o => !o)}>
+          {panelOpen ? '✕' : '☰'}
+        </button>
+
+        {/* 모바일 딤 배경 */}
+        {panelOpen && <div className="fr-panel-dim" onClick={() => setPanelOpen(false)} />}
+
         {/* Right panel */}
-        <div style={{
-          width: '320px', flexShrink: 0,
-          borderLeft: '1px solid #e2e8f0',
-          background: 'white',
-          display: 'flex', flexDirection: 'column',
-          overflowY: 'auto',
-        }}>
+        <div className={`fr-panel${panelOpen ? ' fr-panel-open' : ''}`}>
+          {/* 아바타 없음 배너 */}
+          {!loadingAvatar && !avatar && (
+            <div className="fr-no-avatar-banner">
+              <p>신체 측정 후 아바타를 저장하면<br/>착용 시 자동으로 크기가 맞춰집니다</p>
+              <button onClick={() => navigate('/mypage/body-measure')}>측정하기</button>
+            </div>
+          )}
+
           {/* Cart items */}
           <div style={{ padding: '16px', borderBottom: '1px solid #f1f5f9' }}>
             <h3 style={{ margin: '0 0 12px', fontSize: '0.95rem', fontWeight: 700, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px' }}>

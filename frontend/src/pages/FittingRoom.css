@@ -1,0 +1,190 @@
+/* ═══════════════════════════════
+   FittingRoom 레이아웃 + 모바일
+   ═══════════════════════════════ */
+
+.fr-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* 캔버스 영역 */
+.fr-canvas-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  gap: 12px;
+  position: relative;
+}
+
+/* 캔버스 래퍼 (로딩 오버레이용) */
+.fr-canvas-wrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 360px;
+}
+
+/* 착용 준비 오버레이 */
+.fr-preparing-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.82);
+  border-radius: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  z-index: 10;
+  backdrop-filter: blur(2px);
+}
+
+.fr-preparing-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid #e2e8f0;
+  border-top-color: #6366f1;
+  border-radius: 50%;
+  animation: frSpin 0.7s linear infinite;
+}
+
+@keyframes frSpin {
+  to { transform: rotate(360deg); }
+}
+
+.fr-preparing-text {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: #6366f1;
+  margin: 0;
+}
+
+/* 아바타 없음 배너 */
+.fr-no-avatar-banner {
+  background: linear-gradient(135deg, #eef2ff, #faf5ff);
+  border: 1.5px solid #c7d2fe;
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin: 12px 16px 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.fr-no-avatar-banner p {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #4f46e5;
+  font-weight: 600;
+  flex: 1;
+  line-height: 1.5;
+}
+
+.fr-no-avatar-banner button {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 8px;
+  background: #6366f1;
+  color: white;
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* 우측 패널 */
+.fr-panel {
+  width: 320px;
+  flex-shrink: 0;
+  border-left: 1px solid #e2e8f0;
+  background: white;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+/* 모바일 패널 토글 버튼 (데스크탑에서 숨김) */
+.fr-panel-toggle {
+  display: none;
+}
+
+/* ═══════════════════════
+   모바일 (≤ 767px)
+   ═══════════════════════ */
+@media (max-width: 767px) {
+  .fr-canvas-area {
+    padding: 12px 12px 88px;
+  }
+
+  .fr-panel {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    height: 72vh;
+    border-left: none;
+    border-top: 1px solid #e2e8f0;
+    border-radius: 20px 20px 0 0;
+    box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.12);
+    transform: translateY(100%);
+    transition: transform 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 50;
+  }
+
+  .fr-panel.fr-panel-open {
+    transform: translateY(0);
+  }
+
+  /* 패널 핸들 */
+  .fr-panel::before {
+    content: '';
+    display: block;
+    width: 40px;
+    height: 4px;
+    background: #e2e8f0;
+    border-radius: 2px;
+    margin: 10px auto 0;
+    flex-shrink: 0;
+  }
+
+  /* 플로팅 토글 버튼 */
+  .fr-panel-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 49;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #6366f1, #a855f7);
+    color: white;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 4px 20px rgba(99, 102, 241, 0.45);
+    font-size: 1.5rem;
+    transition: transform 0.2s;
+  }
+
+  .fr-panel-toggle:active { transform: scale(0.92); }
+
+  /* 패널 열릴 때 배경 딤 */
+  .fr-panel-dim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.3);
+    z-index: 49;
+  }
+}
