@@ -378,7 +378,117 @@
 }
 
 /* ══════════════════════
-   Step 5 — 치수선
+   Step 5 — 사이즈 변경
+   ══════════════════════ */
+
+.frg-size-scene {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.frg-size-layer-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: white;
+  border: 1.5px solid #c7d2fe;
+  border-radius: 12px;
+  padding: 12px 16px;
+  width: 230px;
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.1);
+  animation: frgSizeCardPop 3s ease-in-out infinite;
+}
+
+@keyframes frgSizeCardPop {
+  0%, 100% { box-shadow: 0 4px 14px rgba(99, 102, 241, 0.1); }
+  50%      { box-shadow: 0 6px 20px rgba(99, 102, 241, 0.22); }
+}
+
+.frg-size-thumb {
+  width: 40px;
+  height: 40px;
+  background: #f5f3ff;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.frg-size-details {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+}
+
+.frg-size-pname {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.frg-size-selector {
+  position: relative;
+  height: 22px;
+}
+
+.frg-size-badge {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #6366f1;
+  background: #eef2ff;
+  border: 1.5px solid #c7d2fe;
+  border-radius: 5px;
+  padding: 2px 10px;
+}
+
+.frg-size-badge-s { animation: frgSizeS 3s ease-in-out infinite; }
+.frg-size-badge-m { animation: frgSizeM 3s ease-in-out infinite; }
+.frg-size-badge-l { animation: frgSizeL 3s ease-in-out infinite; }
+
+@keyframes frgSizeS {
+  0%        { opacity: 0; transform: translateY(5px); }
+  8%, 28%   { opacity: 1; transform: translateY(0); }
+  38%, 100% { opacity: 0; transform: translateY(-5px); }
+}
+@keyframes frgSizeM {
+  0%, 38%   { opacity: 0; transform: translateY(5px); }
+  46%, 62%  { opacity: 1; transform: translateY(0); }
+  72%, 100% { opacity: 0; transform: translateY(-5px); }
+}
+@keyframes frgSizeL {
+  0%, 72%   { opacity: 0; transform: translateY(5px); }
+  80%, 92%  { opacity: 1; transform: translateY(0); }
+  100%      { opacity: 0; transform: translateY(-5px); }
+}
+
+.frg-size-arrow {
+  font-size: 0.9rem;
+  color: #94a3b8;
+  flex-shrink: 0;
+  animation: frgSizeArrow 3s ease-in-out infinite;
+}
+
+@keyframes frgSizeArrow {
+  0%, 100% { color: #94a3b8; }
+  40%, 60% { color: #6366f1; }
+}
+
+.frg-size-caption {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  margin: 0;
+  text-align: center;
+}
+
+/* ══════════════════════
+   Step 6 — 치수선
    ══════════════════════ */
 
 .frg-dim-box {

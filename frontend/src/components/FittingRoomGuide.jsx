@@ -77,6 +77,31 @@ const LayerAnim = () => (
   </div>
 );
 
+const SizeAnim = () => (
+  <div className="frg-anim-scene">
+    <div className="frg-size-scene">
+      <div className="frg-size-layer-card">
+        <div className="frg-size-thumb">
+          <svg viewBox="0 0 40 36" fill="none" width="28" height="28">
+            <path d="M14 4 C16 9,24 9,26 4 L36 8 L40 16 L34 20 L30 14 L30 33 L10 33 L10 14 L6 20 L0 16 L4 8Z"
+              fill="rgba(99,102,241,0.25)" stroke="#6366f1" strokeWidth="1.5"/>
+          </svg>
+        </div>
+        <div className="frg-size-details">
+          <span className="frg-size-pname">반팔 티셔츠</span>
+          <div className="frg-size-selector">
+            <span className="frg-size-badge frg-size-badge-s">S</span>
+            <span className="frg-size-badge frg-size-badge-m">M</span>
+            <span className="frg-size-badge frg-size-badge-l">L</span>
+          </div>
+        </div>
+        <span className="frg-size-arrow">▾</span>
+      </div>
+      <p className="frg-size-caption">레이어 패널 드롭다운에서 사이즈를 변경할 수 있어요</p>
+    </div>
+  </div>
+);
+
 const DimAnim = () => (
   <div className="frg-anim-scene">
     <div className="frg-dim-box">
@@ -117,6 +142,11 @@ const STEPS = [
     title: '여러 옷을 겹쳐 입어 보세요',
     desc: '여러 상품을 착용하면 레이어로 쌓입니다. 레이어 패널에서 개별 선택·숨기기·위치 초기화가 가능합니다.',
     animation: <LayerAnim />,
+  },
+  {
+    title: '레이어에서 사이즈를 바꿔보세요',
+    desc: '오른쪽 레이어 패널에서 착용 중인 옷의 사이즈를 드롭다운으로 변경할 수 있습니다. 사이즈를 바꾸면 장바구니에도 즉시 반영됩니다.',
+    animation: <SizeAnim />,
   },
   {
     title: '치수선으로 사이즈를 확인하세요',
