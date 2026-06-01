@@ -627,13 +627,15 @@ function ProductDetail() {
                   reviews.map((review) => (
                     <div key={review.id} className="review-item">
                       <div className="review-meta">
-                        <span className="review-user">{review.user_email.split('@')[0]}</span>
-                        <div className="review-stars">
-                          {[1, 2, 3, 4, 5].map((s) => (
-                            <Star key={s} size={14} fill={s <= review.rating ? "#ffc107" : "none"} color={s <= review.rating ? "#ffc107" : "#cbd5e1"} />
-                          ))}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span className="review-user">{review.user_email.split('@')[0]}</span>
+                          <div className="review-stars">
+                            {[1, 2, 3, 4, 5].map((s) => (
+                              <Star key={s} size={14} fill={s <= review.rating ? "#ffc107" : "none"} color={s <= review.rating ? "#ffc107" : "#cbd5e1"} />
+                            ))}
+                          </div>
+                          <span className="review-date">{formatDate(review.created_at)}</span>
                         </div>
-                        <span className="review-date">{formatDate(review.created_at)}</span>
                         {userEmail === review.user_email && (
                           <div className="review-owner-actions">
                             <button onClick={() => navigate(`/reviews/edit/${review.id}`)}><Edit2 size={14} /></button>
@@ -670,7 +672,7 @@ function ProductDetail() {
                             )
                           )}
                         </div>
-                        <p className="review-comment">{review.comment}</p>
+                        <p className="review-text">{review.comment}</p>
                       </div>
                     </div>
                   ))
