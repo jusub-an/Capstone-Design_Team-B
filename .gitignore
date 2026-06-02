@@ -32,3 +32,5 @@ build/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+backend/sam_hq_vit_b.pth

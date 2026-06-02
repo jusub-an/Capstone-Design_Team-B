@@ -10,3 +10,9 @@ opencv-python==4.10.0.84
 numpy==1.26.4
 rembg==2.0.56
 Pillow>=10.0.0
+torch
+torchvision
+segment-anything-hq
+transparent-background
+transformers
+segmentation-refinement

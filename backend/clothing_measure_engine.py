@@ -1,14 +1,127 @@
+import os
+import site
+
+try:
+    # ONNX Runtime이 GPU(CUDA 12) 파일을 못 찾는 버그 해결을 위해,
+    # PyTorch가 이미 가지고 있는 CUDA 12 파일 경로를 런타임에만 임시로 PATH에 주입합니다.
+    torch_lib_path = os.path.join(site.getsitepackages()[0], "torch", "lib")
+    if os.path.exists(torch_lib_path):
+        os.environ["PATH"] = torch_lib_path + \
+            os.pathsep + os.environ.get("PATH", "")
+except Exception:
+    pass
+
 import cv2
 import numpy as np
 from rembg import remove
 import math
 import base64
 
+
 class ClothingMeasureEngine:
     def __init__(self):
-        # rembg 모델은 첫 호출 시 자동 다운로드 (birefnet-massive)
-        from rembg import new_session
-        self.session = new_session("birefnet-massive")
+        import os
+        import urllib.request
+        from segment_anything_hq import sam_model_registry, SamPredictor
+        import torch
+
+        sam_checkpoint = "sam_hq_vit_b.pth"
+        if not os.path.exists(sam_checkpoint):
+            print("Downloading SAM-HQ weights... This may take a minute.")
+            url = "https://huggingface.co/lkeab/hq-sam/resolve/main/sam_hq_vit_b.pth"
+            urllib.request.urlretrieve(url, sam_checkpoint)
+
+        model_type = "vit_b"
+        sam = sam_model_registry[model_type](checkpoint=sam_checkpoint)
+        if torch.cuda.is_available():
+            sam.to(device="cuda")
+        self.predictor = SamPredictor(sam)
+
+        # 2. CascadePSP 초기화 (테두리 정밀 다듬기)
+        import segmentation_refinement as refine
+        print("Initializing CascadePSP Refiner... This may take a moment.")
+        self.refiner = refine.Refiner(
+    device='cuda:0' if torch.cuda.is_available() else 'cpu')
+
+    def _remove_bg(
+    self,
+    image_bytes,
+    target_type="Shirt",
+     category_type="Top"):
+        import cv2
+        import numpy as np
+
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        img_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+
+        self.predictor.set_image(img_rgb)
+
+        h, w = img_rgb.shape[:2]
+        # sam_hq 로직
+        if target_type == "A4":
+            # A4 용지는 중앙 1포인트면 충분함
+            input_point = np.array([[w // 2, h // 2]])
+            input_label = np.array([1])
+        else:
+            if category_type == "Bottom":
+                # 하의(바지)의 경우 가랑이 중앙(w//2)에 빈 공간이 있을 확률이 매우 높으므로 정중앙을 아예 피합니다.
+                # 왼쪽 허벅지, 오른쪽 허벅지, 왼쪽 종아리, 오른쪽 종아리
+                input_point = np.array([
+                    [w // 3, h // 3],       # 왼쪽 허벅지
+                    [2 * w // 3, h // 3],   # 오른쪽 허벅지
+                    [w // 3, 2 * h // 3],   # 왼쪽 종아리
+                    [2 * w // 3, 2 * h // 3]  # 오른쪽 종아리
+                ])
+                input_label = np.array([1, 1, 1, 1])
+            else:
+                # 상의(Top)의 경우 소매와 몸통을 잡되, 여백이 많아도 옷에 맞도록 약간 안쪽으로 조정
+                input_point = np.array([
+                    [w // 2, h // 2],       # 가슴 중앙
+                    [w // 3, h // 3],       # 왼쪽 소매/어깨 부근
+                    [2 * w // 3, h // 3],   # 오른쪽 소매/어깨 부근
+                    [w // 2, h // 4],       # 목 아래 상단
+                    [w // 2, 3 * h // 4]    # 밑단 근처 하단
+                ])
+                input_label = np.array([1, 1, 1, 1, 1])
+
+        import time
+        t_sam = time.time()
+        masks, _, _ = self.predictor.predict(
+            point_coords=input_point,
+            point_labels=input_label,
+            box=None,
+            multimask_output=False,
+        )
+        print(
+            f"[TIME] SAM-HQ Inference ({target_type}): {time.time() - t_sam:.2f} seconds")
+
+        mask = masks[0]
+        alpha_channel = (mask * 255).astype(np.uint8)
+        rgba = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2BGRA)
+        rgba[:, :, 3] = alpha_channel
+
+        # 시각화 (디버그용)
+        vis_img = img_bgr.copy()
+        for i, pt in enumerate(input_point):
+            cv2.circle(vis_img, (pt[0], pt[1]), radius=max(
+                5, w // 50), color=(0, 255, 255), thickness=-1)
+            cv2.circle(vis_img, (pt[0], pt[1]), radius=max(
+                5, w // 50), color=(0, 0, 255), thickness=2)
+            cv2.putText(vis_img,
+    f"P{i+1}",
+    (pt[0] + 10,
+    pt[1] - 10),
+    cv2.FONT_HERSHEY_SIMPLEX,
+    max(0.5,
+    w // 500),
+    (0,
+    0,
+    255),
+     2)
+
+        _, mask_buf = cv2.imencode('.png', rgba)
+        return mask_buf.tobytes(), vis_img
 
     def _encode_img(self, img):
         """OpenCV 이미지를 base64 문자열로 변환"""
@@ -22,7 +135,8 @@ class ClothingMeasureEngine:
         line_len = math.hypot(b[0] - a[0], b[1] - a[1])
         if line_len == 0:
             return math.hypot(p[0] - a[0], p[1] - a[1])
-        u = ((p[0] - a[0]) * (b[0] - a[0]) + (p[1] - a[1]) * (b[1] - a[1])) / (line_len ** 2)
+        u = ((p[0] - a[0]) * (b[0] - a[0]) + (p[1] - a[1])
+             * (b[1] - a[1])) / (line_len ** 2)
         proj_x = a[0] + u * (b[0] - a[0])
         proj_y = a[1] + u * (b[1] - a[1])
         return math.hypot(p[0] - proj_x, p[1] - proj_y)
@@ -36,44 +150,44 @@ class ClothingMeasureEngine:
             if len(app) == 4:
                 approx = app
                 break
-        
+
         if approx is None:
             return None
-            
+
         cnt_pts = cnt.reshape(-1, 2)
         approx_pts = approx.reshape(-1, 2)
-        
+
         # 꼭짓점과 가장 가까운 윤곽선 인덱스 찾기
         indices = []
         for pt in approx_pts:
             dists = np.sum((cnt_pts - pt)**2, axis=1)
             indices.append(np.argmin(dists))
-            
+
         indices.sort()
-        
+
         lines = []
         n = len(cnt_pts)
         for i in range(4):
             start_idx = indices[i]
-            end_idx = indices[(i+1)%4]
-            
+            end_idx = indices[(i + 1) % 4]
+
             if start_idx < end_idx:
                 segment = cnt_pts[start_idx:end_idx]
             else:
                 segment = np.vstack((cnt_pts[start_idx:], cnt_pts[:end_idx]))
-                
+
             # 라운딩된 꼭짓점 부근(양끝 15%) 제외하고 직선 구간만 추출
             seg_len = len(segment)
             if seg_len > 10:
                 trim = int(seg_len * 0.15)
                 segment = segment[trim:-trim]
-                
+
             if len(segment) > 2:
                 line = cv2.fitLine(segment, cv2.DIST_L2, 0, 0.01, 0.01)
                 lines.append((line[0][0], line[1][0], line[2][0], line[3][0]))
             else:
                 return approx
-                
+
         def intersect(line1, line2):
             v1x, v1y, x1, y1 = line1
             v2x, v2y, x2, y2 = line2
@@ -84,13 +198,12 @@ class ClothingMeasureEngine:
 
         sharp_corners = []
         for i in range(4):
-            pt = intersect(lines[i-1], lines[i])
+            pt = intersect(lines[i - 1], lines[i])
             if pt is None: return approx
             sharp_corners.append([pt])
-            
-        return np.array(sharp_corners, dtype=np.float32)
 
-    def process(self, shirt_image_bytes, a4_image_bytes, shirt_rect, a4_rect, orig_w, orig_h, category_type="Top", shoulder_pts=None):
+        return np.array(sharp_corners, dtype=np.float32)
+    def process(self, shirt_image_bytes, a4_image_bytes, shirt_rect, a4_rect, orig_w, orig_h, category_type="Top", shoulder_pts=None, debug_mode=False):
         # 난수 고정 — AI 배경제거 결과를 매번 동일하게
         import random, torch
         random.seed(42)
@@ -104,17 +217,20 @@ class ClothingMeasureEngine:
         # 0. 원본 크롭 이미지 저장
         shirt_orig_nparr = np.frombuffer(shirt_image_bytes, np.uint8)
         shirt_orig_img = cv2.imdecode(shirt_orig_nparr, cv2.IMREAD_COLOR)
-        if shirt_orig_img is not None:
+        if shirt_orig_img is not None and debug_mode:
             debug_stages['0_shirt_crop_original'] = self._encode_img(shirt_orig_img)
 
         a4_orig_nparr = np.frombuffer(a4_image_bytes, np.uint8)
         a4_orig_img = cv2.imdecode(a4_orig_nparr, cv2.IMREAD_COLOR)
-        if a4_orig_img is not None:
+        if a4_orig_img is not None and debug_mode:
             debug_stages['1_a4_crop_original'] = self._encode_img(a4_orig_img)
-
-        # 1. 배경 제거 (rembg)
-        shirt_mask_bytes = remove(shirt_image_bytes, session=self.session)
-        a4_mask_bytes = remove(a4_image_bytes, session=self.session)
+        # 1. 배경 제거 (SAM-HQ 고정)
+        shirt_mask_bytes, shirt_prompt_vis = self._remove_bg(shirt_image_bytes, target_type="Shirt", category_type=category_type)
+        a4_mask_bytes, a4_prompt_vis = self._remove_bg(a4_image_bytes, target_type="A4", category_type=category_type)
+        
+        if debug_mode:
+            debug_stages['1_5_shirt_sam_prompt'] = self._encode_img(shirt_prompt_vis)
+            debug_stages['1_6_a4_sam_prompt'] = self._encode_img(a4_prompt_vis)
 
         # 바이트를 numpy array(이미지)로 변환
         shirt_nparr = np.frombuffer(shirt_mask_bytes, np.uint8)
@@ -128,26 +244,100 @@ class ClothingMeasureEngine:
 
         if shirt_rgba.shape[2] != 4 or a4_rgba.shape[2] != 4:
             raise ValueError("Images do not have alpha channel after background removal")
+        # [NEW] CascadePSP: 초정밀 테두리 다듬기 (Refinement)
 
-        # 디버그: rembg 결과 (RGBA → BGR with checkerboard bg)
-        debug_stages['2_shirt_rembg_rgba'] = self._encode_img(self._rgba_to_vis(shirt_rgba))
-        debug_stages['3_a4_rembg_rgba'] = self._encode_img(self._rgba_to_vis(a4_rgba))
+        skip_cascade = False 
+
+        # 1. 다듬기 전 원본 SAM 마스크 저장 (비교용 - 디버그 모드에서만)
+        if debug_mode:
+            debug_stages['1_7_shirt_sam_raw'] = self._encode_img(self._rgba_to_vis(shirt_rgba.copy()))
+            debug_stages['1_8_a4_sam_raw'] = self._encode_img(self._rgba_to_vis(a4_rgba.copy()))
+            # [NEW] CascadePSP L=300 윈도우 분할 시각화
+            vis_crops = shirt_orig_img.copy()
+            vis_crops_all = shirt_orig_img.copy() # 실제 밀도로 촘촘하게 그린 버전
+            contours, _ = cv2.findContours((shirt_rgba[:, :, 3] > 127).astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+            if contours:
+                contour = max(contours, key=cv2.contourArea)
+                
+                # 1. 보기 편하게 30개만 듬성듬성 그린 버전
+                step_size = max(1, len(contour) // 30)
+                for i in range(0, len(contour), step_size):
+                    pt = contour[i][0]
+                    x, y = pt[0], pt[1]
+
+                    cv2.rectangle(vis_crops, (x - 150, y - 150), (x + 150, y + 150), (0, 255, 255), 8) # L=300 노란 박스
+                    cv2.circle(vis_crops, (x, y), 15, (0, 0, 255), -1) # 박스 중심점 (빨강)
+                
+                # 2. 실제 CascadePSP 연산과 유사하게 50픽셀 간격으로 모든 박스를 그린 버전
+                for i in range(0, len(contour), 50):
+                    pt = contour[i][0]
+                    x, y = pt[0], pt[1]
+                    # 선이 너무 굵으면 노란색으로 화면이 덮이므로 굵기를 3으로 줄임
+                    cv2.rectangle(vis_crops_all, (x - 150, y - 150), (x + 150, y + 150), (0, 255, 255), 3) 
+                    cv2.circle(vis_crops_all, (x, y), 5, (0, 0, 255), -1)
+
+                debug_stages['1_8_1_cascade_L300_crops_sample'] = self._encode_img(vis_crops)
+            debug_stages['1_8_2_cascade_L300_crops_all'] = self._encode_img(vis_crops_all)
+
+        # 2. CascadePSP 적용 
+        shirt_alpha_raw = shirt_rgba[:, :, 3].copy() if debug_mode else shirt_rgba[:, :, 3]
+        a4_alpha_raw = a4_rgba[:, :, 3].copy() if debug_mode else a4_rgba[:, :, 3]
+
+        if not skip_cascade:
+            # 옷(Shirt)과 A4 모두 4K 정밀도를 위해 CascadePSP 적용
+            import time
+            print(f"[TIME] Starting CascadePSP for Shirt/A4...")
+            t_cascade = time.time()
+            shirt_alpha_refined = self.refiner.refine(shirt_orig_img, shirt_alpha_raw, fast=False, L=400)
+            a4_alpha_refined = self.refiner.refine(a4_orig_img, a4_alpha_raw, fast=False, L=400)
+            print(f"[TIME] CascadePSP for Shirt/A4 finished: {time.time() - t_cascade:.2f} seconds")
+        else:
+            # 스킵할 경우 원본을 그대로 덮어씀
+            shirt_alpha_refined = shirt_alpha_raw
+            a4_alpha_refined = a4_alpha_raw
+
+        shirt_rgba[:, :, 3] = shirt_alpha_refined
+        a4_rgba[:, :, 3] = a4_alpha_refined
+
+        if debug_mode:
+            # 디버그: rembg 결과 (RGBA → BGR with checkerboard bg)
+            debug_stages['2_shirt_rembg_rgba'] = self._encode_img(self._rgba_to_vis(shirt_rgba))
+            debug_stages['3_a4_rembg_rgba'] = self._encode_img(self._rgba_to_vis(a4_rgba))
+
+            # 눈으로 확인하기 위한 차이점 시각화 (Diff)
+            diff_vis = shirt_orig_img.copy()
+            diff_vis = cv2.addWeighted(diff_vis, 0.3, diff_vis, 0, 0)
+            _, raw_bin = cv2.threshold(shirt_alpha_raw, 127, 255, cv2.THRESH_BINARY)
+            _, ref_bin = cv2.threshold(shirt_alpha_refined, 127, 255, cv2.THRESH_BINARY)
+            erased_mask = cv2.subtract(raw_bin, ref_bin)
+            added_mask = cv2.subtract(ref_bin, raw_bin)
+            kernel = np.ones((5,5), np.uint8)
+            erased_mask = cv2.dilate(erased_mask, kernel, iterations=1)
+            added_mask = cv2.dilate(added_mask, kernel, iterations=1)
+            diff_vis[erased_mask > 0] = [0, 0, 255]
+            diff_vis[added_mask > 0] = [0, 255, 0]
+            debug_stages['1_9_0_shirt_refine_diff'] = self._encode_img(diff_vis)
+
+            # 마스크 알파값 정밀 비교 행렬
+            self._generate_alpha_comparison_vis(shirt_orig_img, shirt_alpha_raw, shirt_alpha_refined, '1_9_5', debug_stages)
+            self._generate_alpha_comparison_vis(a4_orig_img, a4_alpha_raw, a4_alpha_refined, '3_5_a4', debug_stages)
 
         # 2. A4 분석 (A4 축소 방지를 위해 임계값을 50으로 낮춤)
         a4_alpha = a4_rgba[:, :, 3]
         
         # 디버그 3.5: A4 용지 가장자리 투명도 수치 시각화
-        vis_a4_edge = self._generate_edge_debug_vis(a4_rgba)
-        if vis_a4_edge:
-            debug_stages['3_5_a4_edge_values'] = vis_a4_edge
+        # vis_a4_edge = self._generate_edge_debug_vis(a4_rgba, debug_stages, '3_5')
+        # if vis_a4_edge is not None:
+        #     debug_stages['3_5_a4_edge_values'] = vis_a4_edge
             
-        # 디버그 3.8: 쓰레스홀드 적용 전 A4 알파 채널
-        debug_stages['3_8_a4_alpha_before'] = self._encode_img(a4_alpha)
+        a4_alpha = a4_rgba[:, :, 3]
+        # debug_stages['3_8_a4_alpha_before'] = self._encode_img(a4_alpha)
 
-        _, a4_alpha_thresh = cv2.threshold(a4_alpha, 5, 255, cv2.THRESH_BINARY)
+        _, a4_alpha_thresh = cv2.threshold(a4_alpha, 150, 255, cv2.THRESH_BINARY)
 
         # 디버그 4: 쓰레스홀드 적용 후 A4 알파 마스크
-        debug_stages['4_a4_alpha_mask'] = self._encode_img(a4_alpha_thresh)
+        if debug_mode:
+            debug_stages['4_a4_alpha_mask'] = self._encode_img(a4_alpha_thresh)
 
         contours_a4, _ = cv2.findContours(a4_alpha_thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
@@ -169,7 +359,8 @@ class ClothingMeasureEngine:
         cv2.drawContours(a4_corners_vis, [cnt_a4], -1, (0, 255, 0), 2)
         for pt in approx:
             cv2.circle(a4_corners_vis, (int(pt[0][0]), int(pt[0][1])), 8, (0, 0, 255), -1)
-        debug_stages['5_a4_quad_detection'] = self._encode_img(a4_corners_vis)
+        if debug_mode:
+            debug_stages['5_a4_quad_detection'] = self._encode_img(a4_corners_vis)
 
         # 글로벌 좌표계로 변환 (orig_w, orig_h 기준)
         pts = np.array([pt[0] + [a4_rect['x'], a4_rect['y']] for pt in approx], dtype=np.float32)
@@ -228,18 +419,19 @@ class ClothingMeasureEngine:
         shirt_alpha = shirt_rgba[:, :, 3]
 
         # 디버그 5.5: 의류 가장자리 투명도 수치 시각화
-        vis_shirt_edge = self._generate_edge_debug_vis(shirt_rgba)
-        if vis_shirt_edge:
-            debug_stages['5_5_shirt_edge_values'] = vis_shirt_edge
+        # vis_shirt_edge = self._generate_edge_debug_vis(shirt_rgba, debug_stages, '5_5')
+        # if vis_shirt_edge is not None:
+        #     debug_stages['5_5_shirt_edge_values'] = vis_shirt_edge
 
-        # 디버그 5.8: 쓰레스홀드 적용 전 의류 알파 채널
-        debug_stages['5_8_shirt_alpha_before'] = self._encode_img(shirt_alpha)
+        shirt_alpha = shirt_rgba[:, :, 3]
+        # debug_stages['5_8_shirt_alpha_before'] = self._encode_img(shirt_alpha)
 
         # 그림자 노이즈 억제를 위해 임계값 250 적용
-        _, shirt_alpha_thresh = cv2.threshold(shirt_alpha, 250, 255, cv2.THRESH_BINARY)
+        _, shirt_alpha_thresh = cv2.threshold(shirt_alpha, 150, 255, cv2.THRESH_BINARY)
 
         # 디버그 6: 쓰레스홀드 적용 후 의류 알파 마스크
-        debug_stages['6_shirt_alpha_mask'] = self._encode_img(shirt_alpha_thresh)
+        if debug_mode:
+            debug_stages['6_shirt_alpha_mask'] = self._encode_img(shirt_alpha_thresh)
         
         # 실제 이미지 마스크의 크기에 맞춤 (Frontend에서 소수점 픽셀 반올림 차이 해결)
         sy = int(shirt_rect['y'])
@@ -252,7 +444,7 @@ class ClothingMeasureEngine:
         full_shirt_mask[sy:ey, sx:ex] = shirt_alpha_thresh[:ey-sy, :ex-sx]
 
         # 디버그: 전체 캔버스에 배치된 마스크
-        debug_stages['7_full_mask_on_canvas'] = self._encode_img(full_shirt_mask)
+        # debug_stages['7_full_mask_on_canvas'] = self._encode_img(full_shirt_mask)
 
         warped_shirt_mask = cv2.warpPerspective(full_shirt_mask, M_new, (int(new_width), int(new_height)), flags=cv2.INTER_LINEAR)
         _, warped_shirt_mask = cv2.threshold(warped_shirt_mask, 30, 255, cv2.THRESH_BINARY)
@@ -263,7 +455,8 @@ class ClothingMeasureEngine:
         warped_shirt_mask = cv2.morphologyEx(warped_shirt_mask, cv2.MORPH_OPEN, kernel)
 
         # 디버그: 워프된 마스크
-        debug_stages['8_warped_shirt_mask'] = self._encode_img(warped_shirt_mask)
+        if debug_mode:
+            debug_stages['8_warped_shirt_mask'] = self._encode_img(warped_shirt_mask)
 
         contours_shirt, _ = cv2.findContours(warped_shirt_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
@@ -277,7 +470,7 @@ class ClothingMeasureEngine:
         # 디버그: 실루엣 윤곽선
         contour_vis = np.zeros_like(warped_shirt_mask)
         cv2.drawContours(contour_vis, [tshirt_cnt], -1, 255, 2)
-        debug_stages['9_silhouette_contour'] = self._encode_img(contour_vis)
+        # debug_stages['9_silhouette_contour'] = self._encode_img(contour_vis)
 
         if category_type == "Bottom":
             result = self._process_bottom(tshirt_cnt, warped_shirt_mask, src_tri, M_new, ppcm, x, y, w, h, mid_x, debug_stages)
@@ -293,7 +486,7 @@ class ClothingMeasureEngine:
         cv2.drawContours(hull_vis, [tshirt_cnt], -1, (255, 255, 255), 1)
         hull_pts = cv2.convexHull(tshirt_cnt)
         cv2.drawContours(hull_vis, [hull_pts], -1, (0, 255, 255), 2)
-        debug_stages['10_convex_hull'] = self._encode_img(hull_vis)
+        # debug_stages['10_convex_hull'] = self._encode_img(hull_vis)
 
         # 디버그: Convexity Defects (모든 결함점)
         defects_vis = hull_vis.copy()
@@ -305,7 +498,7 @@ class ClothingMeasureEngine:
                 color = (0, 0, 255) if depth_d > 10.0 else (128, 128, 128)
                 cv2.circle(defects_vis, (fx_d, fy_d), 5, color, -1)
                 cv2.putText(defects_vis, f"{depth_d:.0f}", (fx_d+6, fy_d-6), cv2.FONT_HERSHEY_SIMPLEX, 0.35, color, 1)
-        debug_stages['11_convexity_defects'] = self._encode_img(defects_vis)
+        # debug_stages['11_convexity_defects'] = self._encode_img(defects_vis)
 
         armpit_l = None
         armpit_r = None
@@ -581,7 +774,7 @@ class ClothingMeasureEngine:
         debug_base64 = self._encode_img(debug_img)
 
         # 디버그: 최종 결과 이미지
-        debug_stages['12_final_debug'] = debug_base64
+        # debug_stages['12_final_debug'] = debug_base64
 
         # 피팅용 이미지: rembg RGBA에서 투명 여백 제거 후 PNG base64
         shirt_rembg_base64 = self._crop_and_encode_png(shirt_mask_bytes)
@@ -611,7 +804,7 @@ class ClothingMeasureEngine:
         pil_img.save(buf, format="PNG")
         return base64.b64encode(buf.getvalue()).decode("utf-8")
 
-    def _generate_edge_debug_vis(self, rgba_img):
+    def _generate_edge_debug_vis(self, rgba_img, debug_stages, prefix):
         alpha_mask = rgba_img[:, :, 3]
         
         # 핵심 경계선을 중앙에 잡기 위해 알파값이 중간(127)을 넘는 지점을 찾음
@@ -637,6 +830,30 @@ class ClothingMeasureEngine:
         if actual_h <= 0 or actual_w <= 0:
             return None
             
+        # --- 추가된 디버그 이미지 1: 크롭 위치 컨텍스트 ---
+        context_img = rgba_img[:, :, :3].copy()
+        thick = max(2, context_img.shape[1] // 200)
+        cv2.rectangle(context_img, (stx, sty), (edx, edy), (0, 0, 255), thick)
+        cv2.putText(context_img, "Crop Region", (stx, max(10, sty - 10)), cv2.FONT_HERSHEY_SIMPLEX, max(0.5, thick*0.3), (0, 0, 255), max(1, thick//2))
+        debug_stages[f'{prefix}_edge_crop_context'] = self._encode_img(context_img)
+
+        # --- 추가된 디버그 이미지 2: 뭉개짐(Blur) 시각화 ---
+        blur_comp = rgba_img[:, :, :3].copy()
+        
+        # 10 < alpha < 245 인 구간을 '뭉개진(Fuzzy) 경계'로 정의
+        fuzzy_mask = (alpha_mask > 10) & (alpha_mask < 245)
+        
+        # 뭉개진 부분에 붉은색 틴트 적용
+        red_tint = np.array([0, 0, 255], dtype=np.float32)
+        blur_comp[fuzzy_mask] = (blur_comp[fuzzy_mask].astype(np.float32) * 0.3 + red_tint * 0.7).astype(np.uint8)
+        
+        # 현재 기준이 되는 127(약 50%) 임계값 윤곽선을 초록색으로 표시
+        _, thresh = cv2.threshold(alpha_mask, 127, 255, cv2.THRESH_BINARY)
+        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        cv2.drawContours(blur_comp, contours, -1, (0, 255, 0), max(1, thick // 2))
+        
+        debug_stages[f'{prefix}_edge_blur_comparison'] = self._encode_img(blur_comp)
+
         crop_alpha = alpha_mask[sty:edy, stx:edx]
         crop_orig = rgba_img[sty:edy, stx:edx]
         
@@ -667,6 +884,102 @@ class ClothingMeasureEngine:
         combined = np.hstack((vis_orig, vis_alpha))
         return self._encode_img(combined)
 
+    def _generate_alpha_comparison_vis(self, orig_img, alpha_raw, alpha_refined, prefix, debug_stages):
+        # 확실한 테두리(경계선) 픽셀을 찾기 위해 형태학적 그래디언트 사용
+        kernel_edge = np.ones((3,3), np.uint8)
+        boundary = cv2.morphologyEx(alpha_raw, cv2.MORPH_GRADIENT, kernel_edge)
+        
+        # 모서리(Corner)를 정확하게 찾기 위해 이진화 처리
+        _, boundary_bin = cv2.threshold(boundary, 127, 255, cv2.THRESH_BINARY)
+        
+        # [NEW] 이미지 가장자리(크롭 경계선)에서 잘리면서 생긴 인공적인 90도 직각을 모서리로 오인하지 않도록 마진(Margin) 제외
+        h, w = boundary_bin.shape
+        margin = 15
+        mask_center = np.zeros((h, w), dtype=np.uint8)
+        # 이미지 크기가 충분히 클 때만 마진 적용
+        if h > margin*2 and w > margin*2:
+            mask_center[margin:h-margin, margin:w-margin] = 255
+            boundary_bin = cv2.bitwise_and(boundary_bin, mask_center)
+        
+        # Harris 코너 알고리즘을 추가 적용(useHarrisDetector=True)하여 옷의 소매 끝, 밑단 등 진짜 '뾰족한 꼭짓점'을 최우선으로 검출
+        corners = cv2.goodFeaturesToTrack(boundary_bin, maxCorners=10, qualityLevel=0.1, minDistance=50, useHarrisDetector=True)
+        
+        if corners is not None and len(corners) > 0:
+            # 가장 뚜렷한 첫 번째 모서리 좌표 선택
+            tx, ty = int(corners[0][0][0]), int(corners[0][0][1])
+        else:
+            # 모서리가 없거나 둥근 물체인 경우, 기존처럼 일반 테두리의 중간 지점 선택
+            y_ind, x_ind = np.where(boundary_bin > 0)
+            if len(y_ind) == 0:
+                # 경계마저 없으면 전경 픽셀 선택
+                y_ind, x_ind = np.where(alpha_raw > 127)
+                if len(y_ind) == 0:
+                    return
+            mid_idx = len(x_ind) // 2
+            tx, ty = x_ind[mid_idx], y_ind[mid_idx]
+        
+        crop_size = 30
+        half = crop_size // 2
+        sty = max(0, ty - half)
+        edy = min(alpha_raw.shape[0], ty + half)
+        stx = max(0, tx - half)
+        edx = min(alpha_raw.shape[1], stx + crop_size)
+        
+        actual_h = edy - sty
+        actual_w = edx - stx
+        if actual_h <= 0 or actual_w <= 0:
+            return
+            
+        crop_orig = orig_img[sty:edy, stx:edx, :3]
+        crop_raw = alpha_raw[sty:edy, stx:edx]
+        crop_ref = alpha_refined[sty:edy, stx:edx]
+        
+        cell_size = 30
+        vis_w = actual_w * cell_size
+        vis_h = actual_h * cell_size
+        
+        # 1. Original Image
+        vis_orig = cv2.resize(crop_orig, (vis_w, vis_h), interpolation=cv2.INTER_NEAREST)
+        
+        # 2. SAM-HQ Alpha Matrix
+        vis_raw = cv2.resize(crop_raw, (vis_w, vis_h), interpolation=cv2.INTER_NEAREST)
+        vis_raw = cv2.cvtColor(vis_raw, cv2.COLOR_GRAY2BGR)
+        for i in range(actual_h):
+            for j in range(actual_w):
+                val = crop_raw[i, j]
+                color = (0, 0, 0) if val > 127 else (255, 255, 255)
+                cv2.rectangle(vis_raw, (j * cell_size, i * cell_size), ((j+1) * cell_size, (i+1) * cell_size), (100, 100, 100), 1)
+                cv2.putText(vis_raw, str(val), (j * cell_size + 2, i * cell_size + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
+
+        # 3. CascadePSP Alpha Matrix (Soft Edges)
+        vis_ref = cv2.resize(crop_ref, (vis_w, vis_h), interpolation=cv2.INTER_NEAREST)
+        vis_ref = cv2.cvtColor(vis_ref, cv2.COLOR_GRAY2BGR)
+        for i in range(actual_h):
+            for j in range(actual_w):
+                val = crop_ref[i, j]
+                color = (0, 0, 0) if val > 127 else (255, 255, 255)
+                cv2.rectangle(vis_ref, (j * cell_size, i * cell_size), ((j+1) * cell_size, (i+1) * cell_size), (100, 100, 100), 1)
+                cv2.putText(vis_ref, str(val), (j * cell_size + 2, i * cell_size + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
+
+        # 4. Final Thresholded Matrix (Binary Edges)
+        _, crop_final = cv2.threshold(crop_ref, 150, 255, cv2.THRESH_BINARY)
+        vis_final = cv2.resize(crop_final, (vis_w, vis_h), interpolation=cv2.INTER_NEAREST)
+        vis_final = cv2.cvtColor(vis_final, cv2.COLOR_GRAY2BGR)
+        for i in range(actual_h):
+            for j in range(actual_w):
+                val = crop_final[i, j]
+                color = (0, 0, 0) if val > 127 else (255, 255, 255)
+                cv2.rectangle(vis_final, (j * cell_size, i * cell_size), ((j+1) * cell_size, (i+1) * cell_size), (100, 100, 100), 1)
+                cv2.putText(vis_final, str(val), (j * cell_size + 2, i * cell_size + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
+
+        cv2.putText(vis_orig, "Original", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+        cv2.putText(vis_raw, "SAM-HQ (Before)", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+        cv2.putText(vis_ref, "CascadePSP (Soft)", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+        cv2.putText(vis_final, "Final Mask (Thresh 150)", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+        
+        combined = np.hstack((vis_orig, vis_raw, vis_ref, vis_final))
+        debug_stages[f'{prefix}_edge_matrix_comparison'] = self._encode_img(combined)
+
     def _rgba_to_vis(self, rgba_img):
         """RGBA 이미지를 체커보드 배경 위에 합성하여 시각화"""
         h, w = rgba_img.shape[:2]
@@ -693,7 +1006,7 @@ class ClothingMeasureEngine:
         cv2.drawContours(hull_vis, [tshirt_cnt], -1, (255, 255, 255), 1)
         hull_pts = cv2.convexHull(tshirt_cnt)
         cv2.drawContours(hull_vis, [hull_pts], -1, (0, 255, 255), 2)
-        debug_stages['10_convex_hull'] = self._encode_img(hull_vis)
+        # debug_stages['10_convex_hull'] = self._encode_img(hull_vis)
 
         # 디버그: 하의 Convexity Defects
         defects_vis = hull_vis.copy()
@@ -705,7 +1018,7 @@ class ClothingMeasureEngine:
                 color = (0, 0, 255) if depth_d > 10.0 else (128, 128, 128)
                 cv2.circle(defects_vis, (fx_d, fy_d), 5, color, -1)
                 cv2.putText(defects_vis, f"{depth_d:.0f}", (fx_d+6, fy_d-6), cv2.FONT_HERSHEY_SIMPLEX, 0.35, color, 1)
-        debug_stages['11_convexity_defects'] = self._encode_img(defects_vis)
+        # debug_stages['11_convexity_defects'] = self._encode_img(defects_vis)
         
         crotch_pt = None
         max_depth = 0
@@ -867,7 +1180,7 @@ class ClothingMeasureEngine:
         draw_line(waist_l, hem_l_left, (200, 200, 200), f"Length {round(length_cm,1)}cm")
 
         debug_base64 = self._encode_img(debug_img)
-        debug_stages['12_final_debug'] = debug_base64
+        # debug_stages['12_final_debug'] = debug_base64
 
         return {
             "length_cm": round(length_cm, 1),

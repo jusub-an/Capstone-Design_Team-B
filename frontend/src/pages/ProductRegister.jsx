@@ -39,7 +39,7 @@ function ProductRegister() {
 
   const [showCvModal, setShowCvModal] = useState(false);
   const [cvImage, setCvImage] = useState(null);
-  const [cvStep, setCvStep] = useState(0); // 0: upload, 1: draw shirt, 2: draw a4, 3: ready
+  const [cvStep, setCvStep] = useState(0);
   const [rectShirt, setRectShirt] = useState(null);
   const [rectA4, setRectA4] = useState(null);
   const [shoulderPts, setShoulderPts] = useState([]);
@@ -51,6 +51,8 @@ function ProductRegister() {
   const [measurementWarnings, setMeasurementWarnings] = useState([]);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [devDebugOpen, setDevDebugOpen] = useState(false);
+  const [debugModeEnabled, setDebugModeEnabled] = useState(false);
+  const [selectedAiModel, setSelectedAiModel] = useState("sam_hq");
   
   const canvasRef = useRef(null);
   const imgRef = useRef(null);
@@ -399,24 +401,29 @@ function ProductRegister() {
   const [cvFittingImageUrl, setCvFittingImageUrl] = useState(null);
 
   const handleAnalyze = async () => {
-    if (!rectShirt || !rectA4) return;
+    if (!rectShirt) return;
+    if (!rectA4) return;
     setCvLoading(true);
     
     try {
       const shirtBlob = await cropToBlob(rectShirt);
-      const a4Blob = await cropToBlob(rectA4);
+      const a4Blob = rectA4 ? await cropToBlob(rectA4) : null;
 
       const reqFormData = new FormData();
       reqFormData.append('shirt_image', shirtBlob, 'shirt.jpg');
-      reqFormData.append('a4_image', a4Blob, 'a4.jpg');
       reqFormData.append('shirt_x', (rectShirt.x / scaleFactor).toString());
       reqFormData.append('shirt_y', (rectShirt.y / scaleFactor).toString());
       reqFormData.append('shirt_w', (rectShirt.w / scaleFactor).toString());
       reqFormData.append('shirt_h', (rectShirt.h / scaleFactor).toString());
-      reqFormData.append('a4_x', (rectA4.x / scaleFactor).toString());
-      reqFormData.append('a4_y', (rectA4.y / scaleFactor).toString());
-      reqFormData.append('a4_w', (rectA4.w / scaleFactor).toString());
-      reqFormData.append('a4_h', (rectA4.h / scaleFactor).toString());
+      
+      if (rectA4) {
+        reqFormData.append('a4_image', a4Blob, 'a4.jpg');
+        reqFormData.append('a4_x', (rectA4.x / scaleFactor).toString());
+        reqFormData.append('a4_y', (rectA4.y / scaleFactor).toString());
+        reqFormData.append('a4_w', (rectA4.w / scaleFactor).toString());
+        reqFormData.append('a4_h', (rectA4.h / scaleFactor).toString());
+      }
+      
       reqFormData.append('orig_w', (canvasRef.current.width / scaleFactor).toString());
       reqFormData.append('orig_h', (canvasRef.current.height / scaleFactor).toString());
       reqFormData.append('category_type', formData.category_type);
@@ -427,13 +434,17 @@ function ProductRegister() {
         reqFormData.append('shoulder_x2', (shoulderPts[1].x / scaleFactor).toString());
         reqFormData.append('shoulder_y2', (shoulderPts[1].y / scaleFactor).toString());
       }
+      
+      // 디버그 모드: 체크박스 선택 시에만 디버그 이미지 생성 요청
+      reqFormData.append('debug_mode', debugModeEnabled.toString());
+
 
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
       abortControllerRef.current = new AbortController();
 
-      const response = await fetch('http://localhost:8000/api/measure/clothing', {
+      const response = await fetch(`http://localhost:8000/api/measure/clothing`, {
         method: 'POST',
         body: reqFormData,
         signal: abortControllerRef.current.signal
@@ -651,8 +662,8 @@ function ProductRegister() {
               </div>
 
               <div className="cv-instructions">
-                {cvStep === 0 && "사진을 업로드 해주세요."}
-                {cvStep === 1 && <span>원본 이미지에서 <span style={{color:'#f87171'}}>의류 영역</span>을 드래그하여 박스를 쳐주세요.</span>}
+                {cvStep === 0 && <span style={{marginBottom: '10px', display: 'block', textAlign: 'center'}}>분석할 의류 사진을 업로드해 주세요.</span>}
+                {cvStep === 1 && <span>원본 이미지에서 <span style={{color:'#f87171'}}>의류 영역</span>을 드래그해 주세요.</span>}
                 {cvStep === 2 && <span>원본 이미지에서 <span style={{color:'#4ade80'}}>A4 용지 영역</span>을 드래그하여 박스를 쳐주세요.</span>}
                 {cvStep === 3 && <span>상의 <span style={{color:'#eab308'}}>어깨 양끝 재봉선 상단</span> 2곳을 각각 클릭해주세요.</span>}
                 {cvStep === 4 && "영역 지정 완료! 분석을 시작하세요."}
@@ -716,52 +727,60 @@ function ProductRegister() {
                         className="dev-debug-toggle"
                         onClick={() => setDevDebugOpen(!devDebugOpen)}
                       >
-                    {devDebugOpen ? <ChevronDown size={14} color="#f59e0b" /> : <ChevronRight size={14} color="#f59e0b" />}
-                    <span>개발자 디버그 시각화</span>
+                        {devDebugOpen ? <ChevronDown size={14} color="#f59e0b" /> : <ChevronRight size={14} color="#f59e0b" />}
+                        <span>개발자 디버그 시각화</span>
                         <span className="dev-debug-badge">{Object.keys(cvResultData.debug_stages).length} stages</span>
                       </button>
                       {devDebugOpen && (
                         <div className="dev-debug-content">
                           {Object.entries(cvResultData.debug_stages)
-                            .sort(([a], [b]) => parseInt(a) - parseInt(b))
+                            .sort(([a], [b]) => a.localeCompare(b))
                             .map(([key, base64Img]) => {
+                              const isFullWidth = key.includes('edge_matrix');
                               const labels = {
-                                '0_shirt_crop_original': '0. 의류 크롭 원본 (Shirt Crop Original)',
-                                '1_a4_crop_original': '1. A4 크롭 원본 (A4 Crop Original)',
-                                '2_shirt_rembg_rgba': '2. 의류 배경 제거 결과 (Shirt rembg RGBA)',
-                                '3_a4_rembg_rgba': '3. A4 배경 제거 결과 (A4 rembg RGBA)',
-                                '4_a4_alpha_mask': '4. A4 알파 채널 마스크 (A4 Alpha Mask)',
-                                '5_a4_quad_detection': '5. A4 사각형 꼭짓점 검출 (A4 Quad Detection)',
-                                '6_shirt_alpha_mask': '6. 의류 알파 채널 마스크 (Shirt Alpha Mask)',
-                                '7_full_mask_on_canvas': '7. 전체 캔버스 마스크 배치 (Full Canvas Mask)',
-                                '8_warped_shirt_mask': '8. 원근 보정된 마스크 (Warped Mask)',
-                                '9_silhouette_contour': '9. 실루엣 윤곽선 (Silhouette Contour)',
-                                '10_convex_hull': '10. 볼록 껍질 (Convex Hull)',
-                                '11_convexity_defects': '11. 오목 결함점 (Convexity Defects)',
-                                '12_final_debug': '12. 최종 특징점 + 치수선 (Final Debug)',
+                                '1_1_shirt_crop_original': '1-1. 크롭된 의류 원본',
+                                '1_2_a4_crop_original':    '1-2. 크롭된 A4 용지 원본',
+                                '2_1_shirt_sam_prompt':    '2-1. 의류 SAM-HQ 힌트 점 (T자 패턴)',
+                                '2_2_a4_sam_prompt':       '2-2. A4 SAM-HQ 힌트 점 (중앙 분포)',
+                                '3_1_shirt_sam_raw':       '3-1. SAM-HQ 배경제거 결과 — 의류',
+                                '3_2_a4_sam_raw':          '3-2. SAM-HQ 배경제거 결과 — A4',
+                                '4_1_shirt_cascade_diff':  '4-1. CascadePSP 차이점 — 의류 (빨강=삭제, 초록=추가)',
+                                '4_2_a4_cascade_diff':     '4-2. CascadePSP 차이점 — A4',
+                                '5_1_shirt_edge_matrix':   '5-1. 의류 테두리 픽셀 알파값 변화 검증 행렬 (4단계)',
+                                '5_2_a4_edge_matrix':      '5-2. A4 테두리 픽셀 알파값 변화 검증 행렬 (4단계)',
+                                '6_1_shirt_cascade_final': '6-1. CascadePSP 최종 결과물 — 의류',
+                                '6_2_a4_cascade_final':    '6-2. CascadePSP 최종 결과물 — A4',
+                                '7_a4_quad_detection':     '7. A4 꼭짓점 검출 결과',
+                                '8_warped_shirt_mask':     '8. 카메라 화각 왜곡 보정 완료 (정면화)',
                               };
                               const descs = {
-                                '0_shirt_crop_original': '프론트엔드에서 사용자가 드래그한 의류 영역을 잘라낸 원본 이미지입니다. rembg에 입력되는 원본 크롭.',
-                                '1_a4_crop_original': '프론트엔드에서 사용자가 드래그한 A4 용지 영역을 잘라낸 원본 이미지입니다. 스케일 기준 계산에 사용.',
-                                '2_shirt_rembg_rgba': 'rembg(U²-Net)로 배경을 제거한 의류 RGBA 결과. 체커보드 위에 합성하여 알파 채널 품질을 확인합니다.',
-                                '3_a4_rembg_rgba': 'rembg로 배경을 제거한 A4 용지 RGBA 결과. A4가 깨끗하게 분리되었는지 확인합니다.',
-                                '4_a4_alpha_mask': 'A4 RGBA의 알파 채널만 추출 후 이진화(threshold=10)한 마스크. 흰색=전경, 검정=배경.',
-                                '5_a4_quad_detection': 'A4 마스크에서 최대 윤곽선(초록)을 찾고 approxPolyDP로 4꼭짓점(빨강)을 검출한 결과.',
-                                '6_shirt_alpha_mask': '의류 RGBA의 알파 채널을 이진화한 마스크. 의류 실루엣이 정확히 분리되었는지 확인.',
-                                '7_full_mask_on_canvas': '크롭된 의류 마스크를 원본 전체 캔버스(orig_w × orig_h) 위에 올바른 좌표로 배치한 결과.',
-                                '8_warped_shirt_mask': 'A4 기반 원근 변환 행렬(M)을 적용하여 투시 왜곡을 보정한 의류 마스크.',
-                                '9_silhouette_contour': '보정된 마스크에서 findContours로 추출한 최대 윤곽선. 이후 모든 특징점 검출의 기반.',
-                                '10_convex_hull': '윤곽선(흰색)과 볼록 껍질(노란색)을 겹쳐서 표시. 껍질과 윤곽선의 차이가 오목 결함점이 됩니다.',
-                                '11_convexity_defects': '볼록 껍질 결함점 시각화. 빨간 점=깊이 10px 이상(유의미), 회색=미달. 숫자는 깊이(px).',
-                                '12_final_debug': '모든 특징점(겨드랑이, 목, 밑단 등)과 치수 측정선을 최종 합성한 디버그 이미지.',
+                                '1_1_shirt_crop_original': '사용자가 화면에서 드래그해 지정한 의류 영역을 잘라낸 원본 크롭입니다. 이 이미지가 SAM-HQ의 첫 번째 입력 재료가 됩니다.',
+                                '1_2_a4_crop_original': '사용자가 화면에서 드래그해 지정한 A4 용지 영역을 잘라낸 원본 크롭입니다. 이 이미지로부터 실제 cm 크기를 역산하는 절대 기준(ppcm)이 계산됩니다.',
+                                '2_1_shirt_sam_prompt': '상의(Top)의 경우: T자 형태에 맞춰 ①칼라 아래 중앙, ②왼쪽 소매 끝, ③오른쪽 소매 끝, ④몸통 중단, ⑤밑단 중앙에 힌트 점을 찍습니다. 하의(Bottom)는 A자 패턴으로 ①허리 중앙, ②허벅지(허복시), ③왼쪽 무릎, ④오른쪽 무릎, ⑤밑단 중앙에 찍습니다. SAM-HQ는 이 5개 좌표를 신호로 받아 경계를 추론합니다.',
+                                '2_2_a4_sam_prompt': 'A4 용지의 경우: 중앙과 상하좌우로 균등하게 퍼진 5개 힌트 좌표를 찍습니다. 흰색 A4가 명도 차이로 쉽게 분리되도록 범위를 넓게 잡습니다.',
+                                '3_1_shirt_sam_raw': 'SAM-HQ 모델이 힌트 5점을 보고 1차로 뽑아낸 의류 마스크입니다. 이 단계는 아직 원본 해상도와 다를 수 있고 테두리가 다소 뭉툭합니다. 이후 CascadePSP가 이 마스크를 원본 해상도에서 재정밀화합니다.',
+                                '3_2_a4_sam_raw': 'SAM-HQ가 1차로 뽑아낸 A4 용지 마스크입니다. 의류와 마찬가지로 CascadePSP가 뒤이어 정밀화합니다.',
+                                '4_1_shirt_cascade_diff': 'CascadePSP가 의류 테두리를 재정밀화한 결과를 SAM-HQ 결과와 비교한 차이점 시각화입니다. 배경으로 재분류돼 삭제된 픽셀은 빨간색, 새로 옷감으로 확보된 픽셀은 초록색으로 표시됩니다.',
+                                '4_2_a4_cascade_diff': 'CascadePSP가 A4 테두리를 재정밀화한 결과와의 차이점입니다. A4 모서리 처리가 어떻게 바뀌었는지 확인할 수 있습니다.',
+                                '5_1_shirt_edge_matrix': '의류 테두리에서 가장 경계가 급격히 변하는 지점 1곳을 찾아 15×15픽셀 영역을 60px 격자로 확대한 4단계 검증 행렬입니다. ① 4K 원본 픽셀 색상 ② SAM-HQ Raw 알파값(0 또는 255) ③ CascadePSP Soft 알파값(0~255 연속) ④ Threshold 250 이진화 최종값(치수 계산에 사용).',
+                                '5_2_a4_edge_matrix': 'A4 테두리에서 경계가 급격한 지점의 4단계 검증 행렬입니다. A4는 Threshold 5(매우 낮음)로 이진화하여 종이가 약간만 찍혀도 포함됩니다.',
+                                '6_1_shirt_cascade_final': 'CascadePSP가 원본 4K 해상도에서 테두리를 재추론한 최종 의류 이미지입니다. 이후 Threshold 250으로 이진화하여 치수 계산용 마스크로 사용됩니다.',
+                                '6_2_a4_cascade_final': 'CascadePSP가 재정밀화한 최종 A4 용지 이미지입니다. 이후 Threshold 5로 이진화하여 A4 윤곽선 검출에 사용됩니다.',
+                                '7_a4_quad_detection': 'CascadePSP로 완성된 A4 마스크에서 윤곽선을 추출한 뒤, 각 변에 fitLine을 적용해 4개 직선 방정식의 교점(intersection)을 꼭짓점으로 계산합니다. 이 4점이 실제 210×297mm 기준이 되어 ppcm을 산출합니다.',
+                                '8_warped_shirt_mask': 'A4 꼭짓점 4개로 getPerspectiveTransform 행렬을 계산한 뒤 warpPerspective로 전체 이미지에 적용한 결과입니다. 카메라가 비스듬히 찍어도 옷을 정면 위에서 내려다본 것처럼 펼쳐집니다. 이 상태에서 각 특징점(겨드랑이·목·밑단 등)간 픽셀 거리를 ppcm으로 나눠 cm를 얻습니다.',
                               };
                               return (
-                                <div key={key} className="dev-debug-item">
+                                <div
+                                  key={key}
+                                  className="dev-debug-item"
+                                  style={isFullWidth ? { gridColumn: '1 / -1' } : {}}
+                                >
                                   <div className="dev-debug-label">{labels[key] || key}</div>
                                   <img
                                     src={`data:image/jpeg;base64,${base64Img}`}
                                     alt={key}
                                     className="dev-debug-img"
+                                    style={isFullWidth ? { width: '100%', maxWidth: '100%' } : {}}
                                   />
                                   <div className="dev-debug-desc">{descs[key] || ''}</div>
                                 </div>
@@ -789,9 +808,29 @@ function ProductRegister() {
                   </>
                 )}
                 {cvStep === 4 && (
-                  <button className="cv-btn primary" onClick={handleAnalyze} disabled={cvLoading}>
-                  {cvLoading ? '분석 중...' : '치수 분석 시작'}
-                  </button>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%' }}>
+
+                    <label style={{
+                      display: 'flex', alignItems: 'center', gap: '8px',
+                      padding: '10px 14px', borderRadius: '8px',
+                      background: debugModeEnabled ? 'rgba(234,179,8,0.12)' : 'rgba(100,116,139,0.08)',
+                      border: `1px solid ${debugModeEnabled ? '#ca8a04' : '#e2e8f0'}`,
+                      cursor: 'pointer', transition: 'all 0.2s',
+                      fontSize: '0.82rem', fontWeight: 600,
+                      color: debugModeEnabled ? '#92400e' : '#64748b',
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={debugModeEnabled}
+                        onChange={e => setDebugModeEnabled(e.target.checked)}
+                        style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#ca8a04' }}
+                      />
+                      🔍 디버그 이미지 생성 (분석 과정 단계별 시각화 — 느려짐)
+                    </label>
+                    <button className="cv-btn primary" style={{ flex: 1, background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)' }} onClick={() => handleAnalyze()} disabled={cvLoading}>
+                      {cvLoading ? '분석 중...' : '자동 치수 추출 시작'}
+                    </button>
+                  </div>
                 )}
                 {cvStep === 5 && (
                   <>

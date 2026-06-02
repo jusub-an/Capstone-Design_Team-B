@@ -1,3 +1,15 @@
+import os
+import site
+
+try:
+    # ONNX Runtime 전체(body_measure_engine 등)에 GPU 가속을 적용하기 위해
+    # 앱 시작 시 가장 먼저 PATH에 CUDA 12 라이브러리 경로를 주입합니다.
+    torch_lib_path = os.path.join(site.getsitepackages()[0], "torch", "lib")
+    if os.path.exists(torch_lib_path):
+        os.environ["PATH"] = torch_lib_path + os.pathsep + os.environ.get("PATH", "")
+except Exception:
+    pass
+
 from typing import List, Optional
 from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Form, Query
 from starlette.concurrency import run_in_threadpool
@@ -208,6 +220,7 @@ async def measure_body(
     image: UploadFile = File(...),
     height_cm: float = Form(...),
     side_image: Optional[UploadFile] = File(None),
+    debug_mode: bool = Form(False),
 ):
     contents = await image.read()
     nparr = np.frombuffer(contents, np.uint8)
@@ -224,7 +237,7 @@ async def measure_body(
 
     try:
         engine = get_measure_engine()
-        result = await run_in_threadpool(engine.analyze, image_bgr, height_cm, side_bgr)
+        result = await run_in_threadpool(engine.analyze, image_bgr, height_cm, side_bgr, debug_mode)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
@@ -246,6 +259,7 @@ async def measure_body(
         "gray_debug_image_base64": _encode(result["gray_debug_image"]),
         "side_debug_image_base64": _encode(result["side_debug_image"]) if result.get("side_debug_image") is not None else None,
         "anchors":                 result.get("anchors"),
+        "debug_stages":            result.get("debug_stages", {}),
     }
 
 from clothing_measure_engine import ClothingMeasureEngine
@@ -277,6 +291,8 @@ async def measure_clothing(
     shoulder_y1: float = Form(None),
     shoulder_x2: float = Form(None),
     shoulder_y2: float = Form(None),
+    debug_mode: bool = Form(False),
+    ai_model: str = Form("sam_hq"),
 ):
     shirt_bytes = await shirt_image.read()
     a4_bytes = await a4_image.read()
@@ -297,7 +313,8 @@ async def measure_clothing(
             shirt_rect, a4_rect,
             orig_w, orig_h,
             category_type,
-            shoulder_pts
+            shoulder_pts,
+            debug_mode
         )
 
         rembg_b64 = result.pop("shirt_rembg_base64", None)
@@ -317,7 +334,9 @@ async def measure_clothing(
         raise HTTPException(status_code=500, detail=f"분석 중 오류 발생: {str(e)}")
 
 
+
 def to_float(val):
+
     if val is None or (isinstance(val, str) and val.strip() == ''):
         return None
     try:
