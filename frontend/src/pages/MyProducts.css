@@ -96,12 +96,14 @@
   border-bottom: 2px solid #f0f2f5;
   color: #888;
   font-size: 0.9rem;
+  white-space: nowrap;
 }
 
 .products-table td {
   padding: 15px;
   border-bottom: 1px solid #f0f2f5;
   vertical-align: middle;
+  white-space: nowrap;
 }
 
 .table-thumb {

@@ -25,6 +25,15 @@ class ClothingMeasureEngine:
         from segment_anything_hq import sam_model_registry, SamPredictor
         import torch
 
+        # 강제로 CPU에 맵핑 (CUDA가 없을 경우 발생하는 deserialize 오류 방지)
+        if not torch.cuda.is_available():
+            original_load = torch.load
+            def safe_load(*args, **kwargs):
+                if 'map_location' not in kwargs or kwargs['map_location'] is None:
+                    kwargs['map_location'] = 'cpu'
+                return original_load(*args, **kwargs)
+            torch.load = safe_load
+
         sam_checkpoint = "sam_hq_vit_b.pth"
         if not os.path.exists(sam_checkpoint):
             print("Downloading SAM-HQ weights... This may take a minute.")
