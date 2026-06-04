@@ -237,7 +237,7 @@ async def measure_body(
 
     try:
         engine = get_measure_engine()
-        result = await run_in_threadpool(engine.analyze, image_bgr, height_cm, side_bgr, debug_mode)
+        result = await run_in_threadpool(engine.analyze, image_bgr, height_cm, side_bgr)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:

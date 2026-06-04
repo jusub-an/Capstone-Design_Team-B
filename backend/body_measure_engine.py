@@ -34,6 +34,7 @@ class BodyMeasureEngine:
             print("[BodyMeasureEngine] 포즈 랜드마커 다운로드 완료.")
 
         cpu = mp_tasks.BaseOptions.Delegate.CPU
+        print("[BodyMeasureEngine] Initializing MediaPipe Pose Landmarker on CPU...")
 
         self._landmarker = mp_vision.PoseLandmarker.create_from_options(
             mp_vision.PoseLandmarkerOptions(
@@ -46,15 +47,25 @@ class BodyMeasureEngine:
             )
         )
 
-        print("[BodyMeasureEngine] rembg 세그멘테이션 세션 초기화 중...")
+        print("[BodyMeasureEngine] rembg (u2net_human_seg) 세그멘테이션 세션 초기화 중...")
         self._rembg_session = new_session("u2net_human_seg")
-        print("[BodyMeasureEngine] rembg 초기화 완료.")
+        
+        # rembg 내부 ONNX Runtime 공급자 확인
+        providers = getattr(self._rembg_session.inner_session, 'get_providers', lambda: ['CPUExecutionProvider'])()
+        device_name = "GPU (CUDA)" if "CUDAExecutionProvider" in providers else "CPU"
+        print(f"[BodyMeasureEngine] rembg 초기화 완료. (동작 환경: {device_name})")
 
     def analyze(self, image_bgr: np.ndarray, user_height_cm: float, side_image_bgr: Optional[np.ndarray] = None) -> Dict[str, Any]:
         if image_bgr is None or image_bgr.size == 0:
             raise ValueError("유효한 이미지가 아닙니다.")
         if user_height_cm <= 0:
             raise ValueError("키(cm)는 0보다 커야 합니다.")
+
+        # 동작 환경 로그 출력 (API 호출 시마다)
+        providers = getattr(self._rembg_session.inner_session, 'get_providers', lambda: ['CPUExecutionProvider'])()
+        device_name = "GPU (CUDA)" if "CUDAExecutionProvider" in providers else "CPU"
+        print(f"[BodyMeasureEngine] MediaPipe Pose Landmarker 동작 환경: CPU")
+        print(f"[BodyMeasureEngine] rembg (u2net_human_seg) 동작 환경: {device_name}")
 
         h, w = image_bgr.shape[:2]
         image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
@@ -72,7 +83,11 @@ class BodyMeasureEngine:
         rw, rh = int(w * scale), int(h * scale)
         pil_input = PILImage.fromarray(image_rgb).resize((rw, rh), PILImage.LANCZOS)
 
+        import time
+        print(f"[BodyMeasureEngine] [TIME] 정면 이미지 배경제거(rembg - u2net_human_seg) 시작...")
+        t_rembg_front = time.time()
         rembg_rgba = rembg_remove(pil_input, session=self._rembg_session, only_mask=False)
+        print(f"[BodyMeasureEngine] [TIME] 정면 이미지 배경제거 완료: {time.time() - t_rembg_front:.2f} seconds")
         alpha_small = np.array(rembg_rgba)[:, :, 3].astype(np.float32)
 
         if scale < 1.0:
@@ -958,10 +973,16 @@ class BodyMeasureEngine:
         _REMBG_MAX = 1024
         scale = min(1.0, _REMBG_MAX / max(h, w))
         rw, rh = int(w * scale), int(h * scale)
-        pil_input = PILImage.fromarray(side_rgb).resize((rw, rh), PILImage.LANCZOS)
-        rembg_rgba = rembg_remove(pil_input, session=self._rembg_session, only_mask=False)
-        alpha_small = np.array(rembg_rgba)[:, :, 3].astype(np.float32)
-        alpha_arr = cv2.resize(alpha_small, (w, h), interpolation=cv2.INTER_LINEAR) if scale < 1.0 else alpha_small
+        pil_side = PILImage.fromarray(side_rgb).resize((rw, rh), PILImage.LANCZOS)
+        
+        import time
+        print(f"[BodyMeasureEngine] [TIME] 측면 이미지 배경제거(rembg - u2net_human_seg) 시작...")
+        t_rembg_side = time.time()
+        rembg_side_rgba = rembg_remove(pil_side, session=self._rembg_session, only_mask=False)
+        print(f"[BodyMeasureEngine] [TIME] 측면 이미지 배경제거 완료: {time.time() - t_rembg_side:.2f} seconds")
+        
+        s_alpha_small = np.array(rembg_side_rgba)[:, :, 3].astype(np.float32)
+        alpha_arr = cv2.resize(s_alpha_small, (w, h), interpolation=cv2.INTER_LINEAR) if scale < 1.0 else s_alpha_small
 
         raw_mask = (alpha_arr > 128).astype(np.uint8) * 255
         mask = self._build_binary_mask(raw_mask, w)
@@ -1006,8 +1027,8 @@ class BodyMeasureEngine:
             return depth_cm
 
         chest_d = _draw_depth_line(chest_ty, (200,   0, 200), "가슴깊이")
-        waist_d  = _draw_depth_line(waist_ty,  (0,  140, 255), "허리깊이")
-        hip_d    = _draw_depth_line(hip_ty,    (0,   0, 220), "골반깊이")
+        waist_d  = _draw_depth_line(waist_ty,  (0,  0, 255), "허리깊이")
+        hip_d    = _draw_depth_line(hip_ty,    (0,  165, 255), "골반깊이")
         thigh_d  = _draw_depth_line(thigh_ty,  (0, 200,   0), "허벅지깊이") if thigh_ty is not None else None
         dbg = self._pil_draw_texts(dbg, text_tasks)
 

@@ -13,6 +13,4 @@ Pillow>=10.0.0
 torch
 torchvision
 segment-anything-hq
-transparent-background
-transformers
 segmentation-refinement

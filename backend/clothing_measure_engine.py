@@ -35,13 +35,19 @@ class ClothingMeasureEngine:
         sam = sam_model_registry[model_type](checkpoint=sam_checkpoint)
         if torch.cuda.is_available():
             sam.to(device="cuda")
+            device_name = "GPU (CUDA)"
+        else:
+            sam.to(device="cpu")
+            device_name = "CPU"
         self.predictor = SamPredictor(sam)
+        print(f"[ClothingMeasureEngine] SAM-HQ ({model_type}) 초기화 완료. (동작 환경: {device_name})")
 
         # 2. CascadePSP 초기화 (테두리 정밀 다듬기)
         import segmentation_refinement as refine
-        print("Initializing CascadePSP Refiner... This may take a moment.")
-        self.refiner = refine.Refiner(
-    device='cuda:0' if torch.cuda.is_available() else 'cpu')
+        print("[ClothingMeasureEngine] CascadePSP Refiner 초기화 중...")
+        psp_device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+        self.refiner = refine.Refiner(device=psp_device)
+        print(f"[ClothingMeasureEngine] CascadePSP 초기화 완료. (동작 환경: {'GPU (CUDA)' if psp_device.startswith('cuda') else 'CPU'})")
 
     def _remove_bg(
     self,
