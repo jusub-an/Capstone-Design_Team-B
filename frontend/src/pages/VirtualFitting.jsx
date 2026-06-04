@@ -883,7 +883,7 @@ ${productDetailsText}
   };
 
   return (
-    <div className="vf-page-wrapper product-list-container" style={{ paddingBottom: 0, display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+    <div className="vf-page-wrapper product-list-container" style={{ paddingBottom: 0, display: 'flex', flexDirection: 'column' }}>
       <header className="product-header">
         <div className="logo-section" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>
           <h2>Virtual Fitting</h2>

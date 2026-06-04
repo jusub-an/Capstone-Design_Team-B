@@ -540,14 +540,7 @@ function FittingRoom() {
     setLayers(prev => prev.map(l => l.id === layerId ? { ...l, visible: !l.visible } : l));
   };
 
-  const changeLayerSize = async (layer, newSizeName) => {
-    const res = await fetch(
-      `${BASE}/api/cart/${layer.cart_item_id}?user_email=${encodeURIComponent(userEmail)}&size_name=${encodeURIComponent(newSizeName)}`,
-      { method: 'PATCH' }
-    );
-    if (!res.ok) return;
-    const updated = await res.json();
-    setCartItems(prev => prev.map(c => c.id === layer.cart_item_id ? updated : c));
+  const changeLayerSize = (layer, newSizeName) => {
     const cartItem = cartItems.find(c => c.id === layer.cart_item_id);
     const sizes = cartItem?.product?.top_sizes?.length > 0
       ? cartItem.product.top_sizes
@@ -556,7 +549,7 @@ function FittingRoom() {
     setLayers(prev => prev.map(l =>
       l.id === layer.id ? { ...l, size_name: newSizeName, sizeInfo: newSizeInfo } : l
     ));
-    showToast(`사이즈가 ${newSizeName}로 변경됐습니다`, 'success');
+    showToast(`피팅 사이즈가 ${newSizeName}로 변경됐습니다`, 'success');
   };
 
   const resetLayerPosition = (layerId) => {
@@ -756,12 +749,7 @@ function FittingRoom() {
 
   const onMouseUp = () => setDragging(false);
 
-  const onWheel = (e) => {
-    e.preventDefault();
-    if (!selectedLayerId) return;
-    const delta = e.deltaY > 0 ? -0.05 : 0.05;
-    scaleLayer(selectedLayerId, delta);
-  };
+
 
 
   const isLoggedIn = !!sessionStorage.getItem('token');
@@ -904,10 +892,9 @@ function FittingRoom() {
                 onTouchStart={onMouseDown}
                 onTouchMove={onMouseMove}
                 onTouchEnd={onMouseUp}
-                onWheel={onWheel}
               />
               <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: 0 }}>
-                옷을 클릭해 선택 후 드래그로 이동 · 스크롤로 크기 조절
+                옷을 클릭해 선택 후 드래그로 이동
               </p>
             </div>
           )}

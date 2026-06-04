@@ -450,9 +450,16 @@
 }
 
 @media (max-width: 1200px) {
+  .vf-page-wrapper {
+    height: auto;
+    min-height: 100vh;
+    overflow-y: auto;
+  }
+
   .vf-main-content {
     flex-direction: column;
     padding: 20px;
+    height: auto;
   }
   
   .vf-fit-analysis-section,
@@ -468,6 +475,49 @@
   
   .vf-chat-section {
     min-height: 600px;
+  }
+
+  .vf-header {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 15px 20px;
+    gap: 15px;
+  }
+  
+  .vf-header-left {
+    width: 100%;
+  }
+}
+
+@media (max-width: 768px) {
+  .vf-main-content {
+    padding: 12px;
+    gap: 16px;
+  }
+
+  .vf-canvas-overlay-text {
+    padding: 20px;
+  }
+  
+  .vf-canvas-overlay-text p {
+    font-size: 0.95rem;
+  }
+  
+  .vf-subtext {
+    font-size: 0.8rem;
+  }
+  
+  .vf-header-product-name {
+    max-width: 220px;
+    font-size: 0.95rem;
+  }
+  
+  .vf-chat-section {
+    min-height: 500px;
+  }
+  
+  .vf-visualization-section {
+    min-height: 400px;
   }
 }
 

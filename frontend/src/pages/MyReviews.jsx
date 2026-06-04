@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Star, Edit2, Trash2, ChevronLeft, MessageSquare, ExternalLink, Search, Heart, ShoppingBag } from 'lucide-react';
+import { Star, Edit2, Trash2, ChevronLeft, MessageSquare, ExternalLink, Search, Heart, ShoppingBag, Ruler } from 'lucide-react';
 import './ProductList.css';
 import axios from 'axios';
 import './MyReviews.css';
@@ -202,9 +202,12 @@ export default function MyReviews() {
                   <span className="product-brand">{review.product.brand}</span>
                   <h3 className="product-name">{review.product.name}</h3>
                   {sizeReviews.some(sr => sr.product_id === review.product.id) && (
-                    <span className="size-review-badge" style={{ display: 'inline-block', marginTop: '4px', padding: '3px 8px', fontSize: '0.75rem', fontWeight: 600, color: '#4f46e5', backgroundColor: '#eef2ff', borderRadius: '4px', border: '1px solid #c7d2fe' }}>
-                      실측 사이즈 포함
-                    </span>
+                    <div style={{ marginBottom: '12px' }}>
+                      <span className="size-review-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: '4px', padding: '4px 10px', fontSize: '0.75rem', fontWeight: 700, color: 'white', background: 'linear-gradient(135deg, #6366f1, #a855f7)', borderRadius: '12px', boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)' }}>
+                        <Ruler size={12} />
+                        사이즈 리뷰
+                      </span>
+                    </div>
                   )}
                   <div className="go-product">
                     <span>상품 보기</span>

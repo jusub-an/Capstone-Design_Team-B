@@ -9,6 +9,7 @@ function MyProducts() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeCategory, setActiveCategory] = useState('전체');
   const navigate = useNavigate();
   const userEmail = sessionStorage.getItem('userEmail')?.trim();
   const username = sessionStorage.getItem('username') || 'User';
@@ -187,6 +188,30 @@ function MyProducts() {
         </div>
 
         <main className="my-products-content">
+          <div className="controls-bar">
+            <div className="category-filters">
+              {['전체', ...new Set(products.map(p => p.category?.name).filter(Boolean))].map(cat => (
+                <button
+                  key={cat}
+                  className={`category-btn ${activeCategory === cat ? 'active' : ''}`}
+                  onClick={() => setActiveCategory(cat)}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+            <div className="search-wrapper">
+              <Search className="search-icon" size={18} />
+              <input
+                type="text"
+                className="search-input"
+                placeholder="상품명 검색..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+          </div>
+
           {loading ? (
             <div className="loading-state">로딩 중...</div>
           ) : products.length === 0 ? (
@@ -198,50 +223,57 @@ function MyProducts() {
               </button>
             </div>
           ) : (
-            <div className="products-table-wrapper">
-              <table className="products-table">
-                <thead>
-                  <tr>
-                    <th>이미지</th>
-                    <th>상품명</th>
-                    <th>카테고리</th>
-                    <th>가격</th>
-                    <th>관리</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {products.map(product => (
-                    <tr key={product.id}>
-                      <td>
+            (() => {
+              const filteredProducts = products.filter(p => {
+                const matchCategory = activeCategory === '전체' || p.category?.name === activeCategory;
+                const matchSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase());
+                return matchCategory && matchSearch;
+              });
+
+              if (filteredProducts.length === 0) {
+                return (
+                  <div className="empty-state">
+                    <Package size={48} color="#ccc" />
+                    <p>조건에 맞는 상품이 없습니다.</p>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="products-grid">
+                  {filteredProducts.map(product => (
+                    <div className="product-card" key={product.id}>
+                      <div
+                        className="product-card-img-wrapper"
+                        onClick={() => navigate(`/products/${product.id}`)}
+                      >
                         <img
                           src={`http://localhost:8000${product.image_url}`}
                           alt={product.name}
-                          className="table-thumb"
-                          style={{ cursor: 'pointer' }}
-                          onClick={() => navigate(`/products/${product.id}`)}
-                          onError={(e) => { e.target.src = 'https://via.placeholder.com/50x60'; }}
+                          className="product-card-thumb"
+                          onError={(e) => { e.target.src = 'https://via.placeholder.com/200x240'; }}
                         />
-                      </td>
-                      <td className="product-name-cell" style={{ cursor: 'pointer' }} onClick={() => navigate(`/products/${product.id}`)}>{product.name}</td>
-                      <td>{product.category.name}</td>
-                      <td>{product.price.toLocaleString()}원</td>
-                      <td className="actions-cell">
-                        <div className="actions-wrapper">
-                          <button className="edit-btn" onClick={() => navigate(`/products/edit/${product.id}`)}>
-                            <Edit2 size={16} />
-                            <span>수정</span>
-                          </button>
-                          <button className="delete-btn" onClick={(e) => handleDelete(e, product.id)}>
-                            <Trash2 size={16} />
-                            <span>삭제</span>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
+                      </div>
+                      
+                      <div className="product-card-info" onClick={() => navigate(`/products/${product.id}`)}>
+                        <span className="product-category-badge">{product.category?.name || '기타'}</span>
+                        <h3 className="product-card-name">{product.name}</h3>
+                        <p className="product-card-price">{product.price.toLocaleString()}원</p>
+                      </div>
+
+                      <div className="product-card-actions">
+                        <button className="card-action-btn edit" onClick={() => navigate(`/products/edit/${product.id}`)}>
+                          <Edit2 size={16} /> 수정
+                        </button>
+                        <button className="card-action-btn delete" onClick={(e) => handleDelete(e, product.id)}>
+                          <Trash2 size={16} /> 삭제
+                        </button>
+                      </div>
+                    </div>
                   ))}
-                </tbody>
-              </table>
-            </div>
+                </div>
+              );
+            })()
           )}
         </main>
       </div>

@@ -490,7 +490,7 @@ function BodyMeasure() {
       {/* ── 아바타 생성 안내 팝업 ── */}
       {showGuideModal && (
         <div style={{
-          position: 'fixed', inset: 0, zIndex: 200,
+          position: 'fixed', inset: 0, zIndex: 9999,
           background: 'rgba(15, 23, 42, 0.55)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           padding: '16px', backdropFilter: 'blur(4px)',
