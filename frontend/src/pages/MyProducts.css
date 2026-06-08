@@ -327,4 +327,50 @@
   .search-wrapper {
     max-width: 100%;
   }
+
+  .products-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+  }
+  
+  .product-card-info {
+    padding: 12px;
+  }
+  
+  .product-card-name {
+    font-size: 0.95rem;
+  }
+  
+  .product-card-price {
+    font-size: 1rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .products-grid {
+    gap: 12px;
+  }
+
+  .product-card-info {
+    padding: 10px;
+    gap: 6px;
+  }
+
+  .product-category-badge {
+    font-size: 0.7rem;
+    padding: 3px 6px;
+  }
+
+  .product-card-name {
+    font-size: 0.85rem;
+  }
+
+  .product-card-price {
+    font-size: 0.9rem;
+  }
+
+  .card-action-btn {
+    padding: 10px 0;
+    font-size: 0.75rem;
+  }
 }

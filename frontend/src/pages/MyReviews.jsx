@@ -192,27 +192,24 @@ export default function MyReviews() {
         <div className="reviews-grid">
           {reviews.map((review) => (
             <div key={review.id} className="my-review-card">
-              <div className="review-product-info" onClick={() => navigate(`/products/${review.product.id}`)}>
+              <div className="review-product-header" onClick={() => navigate(`/products/${review.product.id}`)}>
                 <img 
                   src={`http://localhost:8000${review.product.image_url}`} 
                   alt={review.product.name} 
-                  className="product-thumb"
+                  className="header-product-thumb"
                 />
-                <div className="product-details">
-                  <span className="product-brand">{review.product.brand}</span>
-                  <h3 className="product-name">{review.product.name}</h3>
-                  {sizeReviews.some(sr => sr.product_id === review.product.id) && (
-                    <div style={{ marginBottom: '12px' }}>
-                      <span className="size-review-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: '4px', padding: '4px 10px', fontSize: '0.75rem', fontWeight: 700, color: 'white', background: 'linear-gradient(135deg, #6366f1, #a855f7)', borderRadius: '12px', boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)' }}>
-                        <Ruler size={12} />
-                        사이즈 리뷰
-                      </span>
-                    </div>
-                  )}
-                  <div className="go-product">
-                    <span>상품 보기</span>
-                    <ExternalLink size={14} />
-                  </div>
+                <div className="header-product-details">
+                  <span className="header-product-brand">{review.product.brand}</span>
+                  <span className="header-product-name">{review.product.name}</span>
+                </div>
+                {sizeReviews.some(sr => sr.product_id === review.product.id) && (
+                  <span className="size-review-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 10px', fontSize: '0.75rem', fontWeight: 700, color: 'white', background: 'linear-gradient(135deg, #6366f1, #a855f7)', borderRadius: '12px', boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)' }}>
+                    <Ruler size={12} />
+                    사이즈 리뷰
+                  </span>
+                )}
+                <div className="header-go-product">
+                  <ExternalLink size={16} />
                 </div>
               </div>
 
@@ -222,7 +219,7 @@ export default function MyReviews() {
                     {[1, 2, 3, 4, 5].map((s) => (
                       <Star 
                         key={s} 
-                        size={16} 
+                        size={18} 
                         fill={s <= review.rating ? "#ffc107" : "none"} 
                         color={s <= review.rating ? "#ffc107" : "#cbd5e1"} 
                       />
@@ -234,9 +231,9 @@ export default function MyReviews() {
                 <p className="review-text">{review.comment}</p>
                 
                 {review.images && review.images.length > 0 && (
-                  <div className="review-images-preview">
+                  <div className="review-images-gallery">
                     {review.images.map((img) => (
-                      <img key={img.id} src={`http://localhost:8000${img.image_url}`} alt="Review" className="thumb" />
+                      <img key={img.id} src={`http://localhost:8000${img.image_url}`} alt="Review" className="gallery-thumb" />
                     ))}
                   </div>
                 )}

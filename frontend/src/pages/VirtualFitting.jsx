@@ -44,6 +44,7 @@ function VirtualFitting() {
   const [sleeveAngle, setSleeveAngle] = useState('auto');
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
+  const [activeTab, setActiveTab] = useState('2D 가상 피팅 시뮬레이션');
   const dragStartPos = useRef({ x: 0, y: 0 });
 
   const messagesEndRef = useRef(null);
@@ -60,6 +61,33 @@ function VirtualFitting() {
     setDragOffset({
       x: e.nativeEvent.offsetX - dragStartPos.current.x,
       y: e.nativeEvent.offsetY - dragStartPos.current.y
+    });
+  };
+  const handleTouchStart = (e) => {
+    if (e.touches.length > 1) return;
+    const touch = e.touches[0];
+    if (!canvasRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const scaleX = canvasRef.current.width / rect.width;
+    const scaleY = canvasRef.current.height / rect.height;
+    const x = (touch.clientX - rect.left) * scaleX;
+    const y = (touch.clientY - rect.top) * scaleY;
+    setIsDragging(true);
+    dragStartPos.current = { x: x - dragOffset.x, y: y - dragOffset.y };
+  };
+  const handleTouchMove = (e) => {
+    if (!isDragging) return;
+    e.preventDefault();
+    const touch = e.touches[0];
+    if (!canvasRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const scaleX = canvasRef.current.width / rect.width;
+    const scaleY = canvasRef.current.height / rect.height;
+    const x = (touch.clientX - rect.left) * scaleX;
+    const y = (touch.clientY - rect.top) * scaleY;
+    setDragOffset({
+      x: x - dragStartPos.current.x,
+      y: y - dragStartPos.current.y
     });
   };
   const handleMouseUpOrLeave = () => setIsDragging(false);
@@ -814,11 +842,11 @@ function VirtualFitting() {
 아래 제공된 [상품 메타 정보], [상품 사이즈표], [사용자 신체 치수], [고객 리뷰 데이터], [상품 이미지]를 종합적으로 분석하여 사용자의 질문에 답변해 주세요.
 
 [핵심 역할 및 답변 원칙]
-1. 맞춤형 핏 컨설팅: 사용자의 [신체 치수]와 [상품 사이즈표]를 구체적인 수치로 비교하여 직관적으로 설명해 주세요. (예: "고객님의 어깨 너비는 42cm이고, L 사이즈 어깨 단면은 45cm이므로 살짝 여유로운 핏이 예상됩니다.")
-2. 데이터 기반 답변 (환각 방지): 제공된 정보(사이즈, 가격, 리뷰 등)와 이미지에서 확인할 수 없는 내용은 절대 추측하지 말고 "해당 정보는 제공된 상세 페이지에서 확인할 수 없습니다"라고 정중히 안내하세요.
-3. 리뷰 적극 활용: 착용감이나 핏에 대한 질문을 받으면, 제공된 고객 리뷰 내용들의 긍정적인 반응이나 아쉬운 점 등을 근거로 들어 답변의 신뢰도를 높여주세요.
-4. 전문적이고 친절한 톤: 백화점의 퍼스널 스타일리스트처럼 다정하고 센스 있는 말투를 사용하세요.
-5. 가독성 높은 포맷: 마크다운 기호(**, # 등)는 화면에 그대로 노출되므로 절대 사용하지 마세요. 대신 줄바꿈과 하이픈(-), 번호(1. 2.)를 활용해 문단을 깔끔하게 나누어 답변하세요.
+1. 초간결 핵심 답변: 답변이 길어지지 않도록 주의하세요. 불필요한 인사말이나 부연 설명은 생략하고, 질문의 핵심에 대해서만 1~3문장 이내로 아주 짧고 명확하게 답변하세요.
+2. 묻는 말에만 대답: 사용자가 묻지 않은 정보(전체 신체 치수, 제품 전체 사이즈표, 무관한 리뷰 내용 등)를 임의로 덧붙여 설명하지 마세요.
+3. 맞춤형 핏 컨설팅: 사용자가 특정 부위의 핏(어깨, 총장 등)을 물어봤을 때만, 해당 부위의 [신체 치수]와 [상품 사이즈표]를 수치로 비교하여 한 줄로 설명해 주세요.
+4. 환각 방지: 제공된 정보에서 확인할 수 없는 내용은 "해당 정보는 확인할 수 없습니다."라고 한 줄로만 안내하세요.
+5. 포맷 제한: 화면에 깨지는 마크다운 기호(**, # 등)는 절대 쓰지 마세요.
 
 ${productDetailsText}
 `;
@@ -984,12 +1012,24 @@ ${productDetailsText}
       </header>
 
       <main className="vf-main-content">
-        <section className="vf-fit-analysis-section">
+        <div className="vf-mobile-tabs">
+          {['2D 가상 피팅 시뮬레이션', '정밀 핏 분석', 'AI 핏 어드바이저'].map(tab => (
+            <button
+              key={tab}
+              className={`vf-tab-btn ${activeTab === tab ? 'active' : ''}`}
+              onClick={() => setActiveTab(tab)}
+            >
+              {tab === '2D 가상 피팅 시뮬레이션' ? '가상 피팅' : tab === '정밀 핏 분석' ? '핏 분석' : '챗봇'}
+            </button>
+          ))}
+        </div>
+
+        <section className={`vf-fit-analysis-section ${activeTab === '정밀 핏 분석' ? 'active-tab' : ''}`}>
           <div className="vf-visual-header">
             <Sparkles className="vf-icon" />
             <h3>정밀 핏 분석</h3>
           </div>
-          <div className="vf-canvas-container" style={{ gap: '20px', background: 'transparent', border: 'none', boxShadow: 'none', padding: 0 }}>
+          <div className="vf-canvas-container" style={{ gap: '20px', background: 'transparent', border: 'none', boxShadow: 'none', padding: 0, overflow: 'visible', minHeight: 'auto' }}>
             {selectedSize && avatar?.measurements ? (
               <>
                 <div style={{ width: '100%', background: '#ffffff', borderRadius: '14px', padding: '16px', boxShadow: '0 4px 14px rgba(0,0,0,0.03)', border: '1px solid #f1f5f9' }}>
@@ -1049,7 +1089,7 @@ ${productDetailsText}
           </div>
         </section>
 
-        <section className="vf-visualization-section">
+        <section className={`vf-visualization-section ${activeTab === '2D 가상 피팅 시뮬레이션' ? 'active-tab' : ''}`}>
           <div className="vf-visual-header">
             <Sparkles className="vf-icon" />
             <h3>2D 가상 피팅 시뮬레이션</h3>
@@ -1077,11 +1117,15 @@ ${productDetailsText}
                     ref={canvasRef}
                     width={CV_W}
                     height={CV_H}
-                    style={{ borderRadius: '16px', boxShadow: '0 4px 20px rgba(0,0,0,0.08)', display: 'block', maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', cursor: isDragging ? 'grabbing' : 'grab' }}
+                    style={{ borderRadius: '16px', boxShadow: '0 4px 20px rgba(0,0,0,0.08)', display: 'block', maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', cursor: isDragging ? 'grabbing' : 'grab', touchAction: 'none' }}
                     onMouseDown={handleMouseDown}
                     onMouseMove={handleMouseMove}
                     onMouseUp={handleMouseUpOrLeave}
                     onMouseLeave={handleMouseUpOrLeave}
+                    onTouchStart={handleTouchStart}
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={handleMouseUpOrLeave}
+                    onTouchCancel={handleMouseUpOrLeave}
                     onDoubleClick={handleDoubleClick}
                   />
                 </div>
@@ -1131,7 +1175,7 @@ ${productDetailsText}
           </div>
         </section>
 
-        <section className="vf-chat-section">
+        <section className={`vf-chat-section ${activeTab === 'AI 핏 어드바이저' ? 'active-tab' : ''}`}>
           <div className="vf-chat-header">
             <div className="vf-chat-title">
               <MessageSquare className="vf-icon" />

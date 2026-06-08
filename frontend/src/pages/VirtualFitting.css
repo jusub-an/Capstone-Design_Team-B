@@ -449,32 +449,80 @@
   color: #64748b;
 }
 
+.vf-mobile-tabs {
+  display: none;
+  width: 100%;
+  gap: 8px;
+  margin-bottom: 16px;
+  background: white;
+  padding: 6px;
+  border-radius: 14px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.03);
+  border: 1px solid #e2e8f0;
+}
+
+.vf-tab-btn {
+  flex: 1;
+  padding: 12px 0;
+  border: none;
+  background: transparent;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.vf-tab-btn.active {
+  background: #6366f1;
+  color: white;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2);
+}
+
 @media (max-width: 1200px) {
   .vf-page-wrapper {
-    height: auto;
-    min-height: 100vh;
-    overflow-y: auto;
+    height: 100vh;
+    overflow: hidden;
   }
 
   .vf-main-content {
     flex-direction: column;
-    padding: 20px;
-    height: auto;
+    padding: 16px;
+    height: calc(100vh - 140px);
+    min-height: 0;
   }
-  
+
+  .vf-mobile-tabs {
+    display: flex;
+    flex-shrink: 0;
+  }
+
   .vf-fit-analysis-section,
   .vf-visualization-section,
   .vf-chat-section {
     max-width: 100%;
     min-width: unset;
+    display: none;
+    flex: 1;
+    min-height: 0;
   }
-  
-  .vf-visualization-section {
-    min-height: 500px;
+
+  .vf-fit-analysis-section.active-tab,
+  .vf-visualization-section.active-tab,
+  .vf-chat-section.active-tab {
+    display: flex;
   }
-  
-  .vf-chat-section {
-    min-height: 600px;
+
+  .vf-fit-analysis-section.active-tab,
+  .vf-chat-section.active-tab {
+    overflow-y: auto;
+    padding-bottom: 20px;
+  }
+
+  .vf-fit-analysis-section::-webkit-scrollbar,
+  .vf-chat-section::-webkit-scrollbar {
+    width: 0;
   }
 
   .vf-header {
@@ -490,9 +538,37 @@
 }
 
 @media (max-width: 768px) {
+  .vf-header {
+    padding: 8px 12px;
+    gap: 8px;
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .vf-header-thumb {
+    width: 32px;
+    height: 32px;
+  }
+
+  .vf-back-btn span {
+    display: none;
+  }
+
+  .vf-mobile-tabs {
+    padding: 4px;
+    margin-bottom: 8px;
+    gap: 4px;
+  }
+
+  .vf-tab-btn {
+    padding: 8px 0;
+    font-size: 0.85rem;
+  }
+
   .vf-main-content {
-    padding: 12px;
-    gap: 16px;
+    padding: 8px 12px;
+    gap: 10px;
+    height: calc(100vh - 80px);
   }
 
   .vf-canvas-overlay-text {
@@ -508,16 +584,8 @@
   }
   
   .vf-header-product-name {
-    max-width: 220px;
-    font-size: 0.95rem;
-  }
-  
-  .vf-chat-section {
-    min-height: 500px;
-  }
-  
-  .vf-visualization-section {
-    min-height: 400px;
+    max-width: 180px;
+    font-size: 0.9rem;
   }
 }
 
