@@ -201,7 +201,7 @@ class BodyMeasureEngine:
             if thigh_span is not None:
                 thigh_y = thigh_span["p_start"]["y"]
 
-        # 8. 밑위길이
+        # 8. 샅길이
         rise_px = None
         rise_p_start = rise_p_end = None
 
@@ -210,7 +210,7 @@ class BodyMeasureEngine:
             rise_p_start = {"x": float(spine_x), "y": float(pants_waist_y)}
             rise_p_end   = {"x": float(spine_x), "y": float(crotch["y"])}
 
-        # 9. 밑단너비
+        # 9. 발목너비
         hem_span = self._find_hem_width(mask, lm27, lm28, lm25, lm26)
 
         # 10. 팔길이
@@ -304,13 +304,13 @@ class BodyMeasureEngine:
 
         if rise_px is not None:
             measurements.append(self._item(
-                "rise", "밑위길이", rise_px, cm_per_pixel,
+                "rise", "샅길이", rise_px, cm_per_pixel,
                 rise_p_start, rise_p_end,
             ))
 
         if hem_span is not None:
             measurements.append(self._item(
-                "hem", "밑단너비", hem_span["width_px"], cm_per_pixel,
+                "hem", "발목너비", hem_span["width_px"], cm_per_pixel,
                 hem_span["p_start"], hem_span["p_end"],
             ))
 
