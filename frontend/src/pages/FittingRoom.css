@@ -28,7 +28,7 @@
   align-items: center;
   gap: 12px;
   width: 100%;
-  max-width: 360px;
+  max-width: 100%;
 }
 
 /* 착용 준비 오버레이 */
